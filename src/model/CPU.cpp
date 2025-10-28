@@ -1,22 +1,25 @@
 #include <iostream>
 #include <vector>
 #include <string>
+#include <mutex>
 #include "readyqueue/ReadyQueue.cpp"
+#include "Process.cpp"
 
 class CPU
 {
-    std::vector<Process> processes;
     int coreID;
+    std::shared_ptr<Process> currProcess;
     std::vector<std::string> logs;
-    // this only matters if we round robin is used
+
+    // Round robin scheduling parameters
     int timeQuantum;
     int timeLeft;
 
 public:
-    CPU(int coreID, int timeQuantum, ReadyQueue &readyQueue)
+    CPU(int coreID, int timeQuantum)
     {
         this->coreID = coreID;
-        this->processes = std::vector<Process>();
+        this->currProcess = nullptr;
         this->timeQuantum = timeQuantum;
         this->timeLeft = timeQuantum;
     }
@@ -24,9 +27,9 @@ public:
     /**
      * Adds a process to the CPU's process list
      */
-    void addProcess(const Process &process)
+    void addProcess(std::shared_ptr<Process> process)
     {
-        processes.push_back(process);
+        this->currProcess = process;
     }
 
     /**
@@ -34,31 +37,42 @@ public:
      */
     void executeNext()
     {
-        if (this->hasRemainingProcesses())
+        if (this->currProcess != nullptr && this->currProcess->hasInstructions())
         {
-            // pop
-            Process currentProcess = processes.front();
-            processes.erase(processes.begin());
-            // Simulate process execution
-
-            // TODO: parse process
-
-            // TODO: switch case to call appropriate handlers
-
-            // TODO: if scheduler is set to round robin, manage time quantum
-            if (this->timeLeft > 0)
-            {
-                this->timeLeft--;
+            // Set process state to running
+            if (this->currProcess->getState() != ProcessState::RUNNING) {
+                this->currProcess->setState(ProcessState::RUNNING);
             }
-            else
+
+            // Execute next instruction
+            bool executed = this->currProcess->executeNextInstruction();
+            
+            if (executed) {
+                // Handle round robin time quantum
+                if (this->timeLeft > 0)
+                {
+                    this->timeLeft--;
+                }
+                else
+                {
+                    this->timeLeft = this->timeQuantum;
+                    this->currProcess->setState(ProcessState::READY);
+                    this->currProcess = nullptr;
+                }
+            }
+
+            // Check if process is finished
+            if (this->currProcess != nullptr && this->currProcess->isFinished())
             {
-                // reset time quantum, and send process back to the queue
+                this->currProcess->setState(ProcessState::FINISHED);
+                std::string logMsg =    "Process " 
+                                        + this->currProcess->getPID() 
+                                        + " finished on core " 
+                                        + std::to_string(this->coreID);
+                this->logs.push_back(logMsg);
+                this->currProcess = nullptr;
                 this->timeLeft = this->timeQuantum;
             }
-        }
-        else
-        {
-            std::cout << "No remaining processes to execute." << std::endl;
         }
     }
 
@@ -67,18 +81,41 @@ public:
      */
     bool hasRemainingProcesses() const
     {
-        return !processes.empty();
+        return this->currProcess != nullptr && this->currProcess->hasInstructions();
     }
 
-private:
     /**
-     * Parses a process and performs the necessary actions
+     * Checks if the CPU is idle (no current process)
      */
-    // TODO: change type as necessary
-    void parseProcess(const Process &process)
+    bool isIdle() const
     {
-        // do some funky shell script parsing here
+        return this->currProcess == nullptr;
     }
 
-    // TODO: add execution methods as necessary
+    /**
+     * Gets the current process
+     */
+    std::shared_ptr<Process> getCurrentProcess() const
+    {
+        return this->currProcess;
+    }
+
+    /**
+     * Gets the core ID
+     */
+    int getCoreID() const
+    {
+        return this->coreID;
+    }
+
+    /**
+     * Clears the current process (used when preempting)
+     */
+    void clearCurrentProcess()
+    {
+        if (this->currProcess != nullptr) {
+            this->currProcess = nullptr;
+        }
+        this->timeLeft = this->timeQuantum;
+    }
 };
