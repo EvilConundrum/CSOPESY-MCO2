@@ -1,68 +1,81 @@
 #include <iostream>
 #include <vector>
 #include <string>
+#include "readyqueue/ReadyQueue.cpp"
 
 class CPU
 {
-    std::vector<std::string> tasks;
+    std::vector<Process> processes;
     int coreID;
     std::vector<std::string> logs;
+    // this only matters if we round robin is used
     int timeQuantum;
     int timeLeft;
 
 public:
-    CPU(int coreID, int timeQuantum)
+    CPU(int coreID, int timeQuantum, ReadyQueue &readyQueue)
     {
         this->coreID = coreID;
-        this->tasks = std::vector<std::string>();
+        this->processes = std::vector<Process>();
         this->timeQuantum = timeQuantum;
         this->timeLeft = timeQuantum;
     }
 
     /**
-     * Adds a task to the CPU's task list
+     * Adds a process to the CPU's process list
      */
-    void addTask(const std::string &task)
+    void addProcess(const Process &process)
     {
-        tasks.push_back(task);
+        processes.push_back(process);
     }
 
     /**
-     * Executes the next task in the CPU's task list
+     * Executes the next process in the CPU's process list
      */
     void executeNext()
     {
-        if (this->hasRemainingTasks())
+        if (this->hasRemainingProcesses())
         {
             // pop
-            std::string currentTask = tasks.front();
-            tasks.erase(tasks.begin());
-            // Simulate task execution
+            Process currentProcess = processes.front();
+            processes.erase(processes.begin());
+            // Simulate process execution
 
-            // TODO: parse task
+            // TODO: parse process
 
             // TODO: switch case to call appropriate handlers
+
+            // TODO: if scheduler is set to round robin, manage time quantum
+            if (this->timeLeft > 0)
+            {
+                this->timeLeft--;
+            }
+            else
+            {
+                // reset time quantum, and send process back to the queue
+                this->timeLeft = this->timeQuantum;
+            }
         }
         else
         {
-            std::cout << "No remaining tasks to execute." << std::endl;
+            std::cout << "No remaining processes to execute." << std::endl;
         }
     }
 
     /**
-     * Checks if there are remaining tasks to execute
+     * Checks if there are remaining processes to execute
      */
-    bool hasRemainingTasks() const
+    bool hasRemainingProcesses() const
     {
-        return !tasks.empty();
+        return !processes.empty();
     }
 
 private:
     /**
-     * Parses a task string and performs the necessary actions
+     * Parses a process and performs the necessary actions
      */
     // TODO: change type as necessary
-    void parseTask(const std::string &task)
+    void parseProcess(const Process &process)
     {
         // do some funky shell script parsing here
     }
