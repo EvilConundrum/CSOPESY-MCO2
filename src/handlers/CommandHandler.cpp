@@ -2,6 +2,7 @@
 #include <vector>
 #include <string>
 #include <atomic>
+#include "../model/Config.cpp"
 
 enum Commands
 {
@@ -28,27 +29,37 @@ public:
         }
 
         const std::string &command = args[0];
-        args.erase(args.begin()); // pops the first element
+        args.erase(args.begin());
         Commands cmdEnum = this->getCommandEnum(command);
+        
+        bool initialized = false;
+
+        if (!initialized && cmdEnum != INITIALIZE)
+        {
+            std::cout << "System not initialized. Please run 'initialize' command first." << std::endl;
+            return;
+        }
+
         switch (cmdEnum)
         {
         case INITIALIZE:
-            // Handle initialization
+            loadConfig();
+            initialized = true;
             break;
         case EXIT:
             running = false;
             break;
         case SCREEN:
-            // Handle screen command
+            // TODO: Handle screen command
             break;
         case SCHEDULER_START:
-            // Handle scheduler start command
+            // TODO: Handle scheduler start command
             break;
         case SCHEDULER_STOP:
-            // Handle scheduler stop command
+            // TODO: Handle scheduler stop command
             break;
         case REPORT_UTIL:
-            // Handle report utility command
+            // TODO: Handle report utility command
             break;
         case UNKNOWN:
         default:
@@ -80,5 +91,19 @@ private:
             std::cout << "Unknown command: " << command << std::endl;
             return UNKNOWN;
         }
+    }
+
+    void loadConfig()
+    {
+        const std::string filepath = "config.txt";
+        Config config(filepath);
+        std::cout << "Configuration loaded from " << filepath << std::endl;
+        std::cout << "  CPUs: " << config.getNumCpus() << "\n";
+        std::cout << "  Scheduler: " << config.getSchedulerAlgorithm() << "\n";
+        std::cout << "  Quantum cycles: " << config.getQuantumCycles() << "\n";
+        std::cout << "  Batch process frequency: " << config.getBatchProcessFreq() << "\n";
+        std::cout << "  Instruction range: " << config.getMinInstructions() << "-" << config.getMaxInstructions() << "\n";
+        std::cout << "  Delays per exec: " << config.getDelayPerExec() << "\n";
+        std::cout << "  Time between instructions: " << config.getTimeBetweenInstructions() << " ms\n";
     }
 };
