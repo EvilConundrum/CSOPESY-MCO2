@@ -7,12 +7,16 @@ class CPU
     std::vector<std::string> tasks;
     int coreID;
     std::vector<std::string> logs;
+    int timeQuantum;
+    int timeLeft;
 
 public:
-    CPU(int coreID)
+    CPU(int coreID, int timeQuantum)
     {
         this->coreID = coreID;
         this->tasks = std::vector<std::string>();
+        this->timeQuantum = timeQuantum;
+        this->timeLeft = timeQuantum;
     }
 
     /**
