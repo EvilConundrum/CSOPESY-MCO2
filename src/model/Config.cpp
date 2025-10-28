@@ -1,7 +1,8 @@
 #include <string>
 #include <fstream>
-#include <algorithm>
-#include <cctype>
+#include <vector>
+#include <sstream>
+#include "../view/misc.cpp"
 
 class Config
 {
@@ -17,7 +18,15 @@ class Config
     int time_between_instructions;
 
 public:
-    Config() {};
+    Config(const std::string &filepath)
+    {
+        this->time_between_instructions = -1;
+        this->loadConfig(filepath);
+
+        if (this->time_between_instructions == -1)
+            // set to 100ms default
+            this->time_between_instructions = 100;
+    }
 
     int getNumCpus() const { return num_cpus; }
     int getQuantumCycles() const { return quantum_cycles; }
@@ -28,8 +37,52 @@ public:
     int getTimeBetweenInstructions() const { return time_between_instructions; }
     std::string getSchedulerAlgorithm() const { return scheduler_algorithm; }
 
-    void getConfigFromFile(const std::string &filepath)
+    void loadConfig(const std::string &filepath)
     {
-        // TODO: read from config.txt and set the variables above
+        std::string line;
+
+        std::ifstream ConfigFile(filepath);
+        if (!ConfigFile)
+            return;
+
+        while (std::getline(ConfigFile, line))
+        {
+            this->parseLine(line);
+        }
+
+        ConfigFile.close();
+    }
+
+private:
+    /**
+     * Parses a line from the config file and
+     * sets the corresponding configuration parameter.
+     */
+    void parseLine(std::string line)
+    {
+        std::vector<std::string> tokens = splitString(line, ' ');
+
+        if (tokens.size() != 2)
+            return;
+
+        const std::string &key = tokens[0];
+        const std::string &value = tokens[1];
+
+        if (key == "num-cpu")
+            this->num_cpus = std::stoi(value);
+        else if (key == "schedule")
+            this->scheduler_algorithm = value;
+        else if (key == "quantum-cycles")
+            this->quantum_cycles = std::stoi(value);
+        else if (key == "batch-process-freq")
+            this->batch_process_freq = std::stoi(value);
+        else if (key == "min-ins")
+            this->min_instructions = std::stoi(value);
+        else if (key == "max-ins")
+            this->max_instructions = std::stoi(value);
+        else if (key == "delay-per-exec")
+            this->delay_per_exec = std::stoi(value);
+        else if (key == "time-between-instructions")
+            this->time_between_instructions = std::stoi(value);
     }
 };
