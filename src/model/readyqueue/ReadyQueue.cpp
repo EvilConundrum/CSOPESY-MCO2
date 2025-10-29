@@ -6,24 +6,28 @@
 #include "../Process.cpp"
 
 class ReadyQueue {
+protected:
     std::queue<std::shared_ptr<Process>> processes;
     std::mutex queueMutex;
 
 public:
     ReadyQueue() {}
 
+    virtual ~ReadyQueue() {}
+
     /**
      * Adds a process to the ready queue
      */
-    void enqueueProcess(std::shared_ptr<Process> process) {
+    virtual void enqueueProcess(std::shared_ptr<Process> process) {
         std::lock_guard<std::mutex> lock(queueMutex);
+        process->setState(ProcessState::READY);
         processes.push(process);
     }
 
     /**
      * Pops the next process from the ready queue
      */
-    std::shared_ptr<Process> dequeueProcess() {
+    virtual std::shared_ptr<Process> dequeueProcess() {
         std::lock_guard<std::mutex> lock(queueMutex);
 
         if (processes.empty()) {
@@ -36,8 +40,42 @@ public:
         return process;
     }
 
-    bool empty() {
+    /**
+     * Checks if the ready queue is empty
+     */
+    virtual bool empty() {
         std::lock_guard<std::mutex> lock(queueMutex);
         return processes.empty();
+    }
+
+    /**
+     * Gets the number of processes in the queue
+     */
+    virtual size_t size() {
+        std::lock_guard<std::mutex> lock(queueMutex);
+        return processes.size();
+    }
+
+    /**
+     * Peeks at the next process without removing it
+     */
+    virtual std::shared_ptr<Process> peek() {
+        std::lock_guard<std::mutex> lock(queueMutex);
+        
+        if (processes.empty()) {
+            return nullptr;
+        }
+        
+        return processes.front();
+    }
+
+    /**
+     * Clears all processes from the queue
+     */
+    virtual void clear() {
+        std::lock_guard<std::mutex> lock(queueMutex);
+        while (!processes.empty()) {
+            processes.pop();
+        }
     }
 };
