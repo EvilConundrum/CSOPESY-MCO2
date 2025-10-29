@@ -33,9 +33,11 @@ public:
     }
 
     /**
-     * Executes the next process in the CPU's process list
+     * Executes the next instruction of the current process
+     * Returns the process if it needs to be re-queued (time quantum expired)
+     * Returns nullptr if process continues or is finished
      */
-    void executeNext()
+    std::shared_ptr<Process> executeNext()
     {
         if (this->currProcess != nullptr && this->currProcess->hasInstructions())
         {
@@ -55,14 +57,57 @@ public:
                 }
                 else
                 {
+                    // Time quantum expired - need to requeue process
                     this->timeLeft = this->timeQuantum;
                     this->currProcess->setState(ProcessState::READY);
+                    
+                    // Return process for re-queueing
+                    auto processToRequeue = this->currProcess;
                     this->currProcess = nullptr;
+                    return processToRequeue;
                 }
             }
 
             // Check if process is finished
             if (this->currProcess != nullptr && this->currProcess->isFinished())
+            {
+                this->currProcess->setState(ProcessState::FINISHED);
+                std::string logMsg =    "Process " 
+                                        + this->currProcess->getPID() 
+                                        + " finished on core " 
+                                        + std::to_string(this->coreID);
+                this->logs.push_back(logMsg);
+                this->currProcess = nullptr;
+                this->timeLeft = this->timeQuantum;
+            }
+        }
+        
+        return nullptr;
+    }
+
+    /**
+     * Executes one instruction without returning preempted process
+     * (For simpler execution flow)
+     */
+    void executeInstruction()
+    {
+        if (this->currProcess != nullptr && this->currProcess->hasInstructions())
+        {
+            // Set process state to running
+            if (this->currProcess->getState() != ProcessState::RUNNING) {
+                this->currProcess->setState(ProcessState::RUNNING);
+            }
+
+            // Execute next instruction
+            this->currProcess->executeNextInstruction();
+            
+            // Decrement time quantum
+            if (this->timeLeft > 0) {
+                this->timeLeft--;
+            }
+
+            // Check if process is finished
+            if (this->currProcess->isFinished())
             {
                 this->currProcess->setState(ProcessState::FINISHED);
                 std::string logMsg =    "Process " 
@@ -110,12 +155,55 @@ public:
 
     /**
      * Clears the current process (used when preempting)
+     * Returns the removed process
      */
-    void clearCurrentProcess()
+    std::shared_ptr<Process> clearCurrentProcess()
     {
+        auto process = this->currProcess;
         if (this->currProcess != nullptr) {
             this->currProcess = nullptr;
         }
         this->timeLeft = this->timeQuantum;
+        return process;
+    }
+
+    /**
+     * Checks if time quantum has been exhausted
+     */
+    bool isTimeQuantumExpired() const
+    {
+        return this->timeLeft <= 0;
+    }
+
+    /**
+     * Resets the time quantum
+     */
+    void resetTimeQuantum()
+    {
+        this->timeLeft = this->timeQuantum;
+    }
+
+    /**
+     * Gets the remaining time quantum
+     */
+    int getTimeLeft() const
+    {
+        return this->timeLeft;
+    }
+
+    /**
+     * Gets all logs
+     */
+    std::vector<std::string> getLogs() const
+    {
+        return this->logs;
+    }
+
+    /**
+     * Clears all logs
+     */
+    void clearLogs()
+    {
+        this->logs.clear();
     }
 };
