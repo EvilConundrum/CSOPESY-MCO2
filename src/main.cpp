@@ -2,7 +2,7 @@
 #include <vector>
 #include "model\Config.cpp"
 #include "model\CPU.cpp"
-#include "model\readyqueue\ReadyQueue.cpp"
+#include "handlers\ScheduleHandler.cpp"
 #include "view\CLI.cpp"
 #include "handlers\CommandHandler.cpp"
 #include <thread>
@@ -20,18 +20,23 @@ class GreggyOS
     std::thread schedulerThread;
     CommandLineInterface cli;
     Config config;
-    ReadyQueue readyQueue;
+    std::shared_ptr<ScheduleHandler> scheduler;
 
 public:
     GreggyOS() : config("config.txt"), running(true)
     {
-        this->readyQueue = ReadyQueue();
         this->cli = CommandLineInterface();
+
+        // Initialize scheduler based on config
+        this->scheduler = std::make_shared<ScheduleHandler>(
+            config.getSchedulerAlgorithm(), 
+            config.getQuantumCycles()
+        );
 
         // spawn CPUs based on config
         for (int i = 0; i < config.getNumCpus(); ++i)
         {
-            cpus.emplace_back(i, config.getQuantumCycles(), this->readyQueue);
+            cpus.emplace_back(i, config.getQuantumCycles());
         }
 
         // spawn threads
@@ -50,10 +55,8 @@ public:
 
     void handleNext()
     {
-        for (int i = 0; i < cpus.size(); ++i)
-        {
-            cpus[i].executeNext();
-        }
+        // Execute one scheduling cycle
+        scheduler->executeSchedulingCycle(cpus);
     }
 };
 
