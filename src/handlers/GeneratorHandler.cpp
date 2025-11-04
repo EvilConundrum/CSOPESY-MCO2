@@ -68,4 +68,28 @@ public:
     {
         return processCounter;
     }
+
+    /**
+     * Generates a process with a specific name (for screen -s)
+     */
+    std::shared_ptr<Process> generateProcessWithName(const Config &config, const std::string& customName)
+    {
+        // Use custom name instead of auto-generated name
+        
+        int numInstructions = std::uniform_int_distribution<int>(
+            config.getMinInstructions(),
+            config.getMaxInstructions()
+        )(rng);
+
+        // Create process with custom name as PID
+        auto process = std::make_shared<Process>(customName, numInstructions);
+
+        // Generate instructions
+        for (int i = 0; i < numInstructions; i++)
+        {
+            process->addInstruction(Instruction());
+        }
+
+        return process;
+    }
 };
