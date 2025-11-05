@@ -10,9 +10,11 @@
 #include "model\CPU.cpp"
 #include "handlers\ScheduleHandler.cpp"
 #include "handlers\GeneratorHandler.cpp"
+#include "handlers\ScreenHandler.cpp"
 #include "handlers\CommandHandler.cpp"
 #include "handlers\ReportHandler.cpp"
 #include "view\CLI.cpp"
+#include "view\misc.cpp"
 
 /**  TODO: TLDR there will be 2 threads:
  *   - Main thread: handles CLI input and command parsing
@@ -32,6 +34,7 @@ class GreggyOS
     std::shared_ptr<ScheduleHandler> scheduler;
     std::shared_ptr<GeneratorHandler> processGenerator;
     std::shared_ptr<ReportHandler> reportHandler;
+    std::shared_ptr<ScreenHandler> screenHandler;
     CommandHandler commandHandler;
     std::string configFilePath;
     std::mutex screenMutex;
@@ -86,6 +89,17 @@ public:
 
             // Initialize report handler
             this->reportHandler = std::make_shared<ReportHandler>(this->config);
+
+            // Initialize screen handler
+            this->screenHandler = std::make_shared<ScreenHandler>(
+                this->config,
+                this->processGenerator.get(),
+                this->scheduler.get(),
+                this->reportHandler.get()
+            );
+
+            // Link report handler with screen handler
+            this->reportHandler->setScreenHandler(this->screenHandler.get());
 
             // spawn CPUs based on config
             for (int i = 0; i < this->config->getNumCpus(); ++i)
@@ -243,6 +257,11 @@ public:
                 std::lock_guard<std::mutex> lock(screenMutex);
                 std::string screenName = "";
 
+                if (!screenHandler) {
+                    cli.displayMessage("System not initialized. Cannot access screens.");
+                    break;
+                }
+
                 switch (screenMode)
                 {
                 case 1: // create screen
@@ -253,10 +272,10 @@ public:
                     }
 
                     screenName = userInput[2];
-                    this->cli.displayMessage("Creating screen " + screenName);
-
+                    screenHandler->createScreen(screenName);
                     break;
-                case 2: // view specific screen
+                    
+                case 2: // view specific screen (interactive mode)
                     if (userInput.size() < 3)
                     {
                         this->cli.displayMessage("Please provide a process name to view.");
@@ -264,11 +283,32 @@ public:
                     }
 
                     screenName = userInput[2];
-                    this->cli.displayMessage("Viewing screen " + screenName);
+                    screenHandler->enterInteractiveScreen(screenName);
                     break;
 
                 case 3: // list screens
-                    this->cli.displayMessage("Listing all screens...");
+                    {
+                        auto allProcesses = screenHandler->getAllProcesses();
+                        if (allProcesses.empty()) {
+                            this->cli.displayMessage("No processes found.");
+                        } else {
+                            std::cout << "\n--- Active Process Screens ---\n";
+                            for (const auto& proc : allProcesses) {
+                                std::string state;
+                                switch(proc->getState()) {
+                                    case ProcessState::READY: state = "Ready"; break;
+                                    case ProcessState::RUNNING: state = "Running"; break;
+                                    case ProcessState::WAITING: state = "Waiting"; break;
+                                    case ProcessState::FINISHED: state = "Finished"; break;
+                                }
+                                std::cout << "  " << proc->getPID() 
+                                         << " - Line " << proc->getCurrentLine() 
+                                         << "/" << proc->getTotalInstructions()
+                                         << " - " << state << "\n";
+                            }
+                            std::cout << "------------------------------\n";
+                        }
+                    }
                     break;
                 }
                 break; // Break from SCREEN case

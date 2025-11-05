@@ -5,6 +5,7 @@
 #include <chrono>
 #include <ctime>
 #include <unordered_map>
+#include <mutex>
 #include "Instruction.cpp"
 
 enum class ProcessState { READY, RUNNING, WAITING, FINISHED };
@@ -30,6 +31,10 @@ class Process
 
     // Variable storage (persistent process memory)
     std::unordered_map<std::string, uint16_t> variables;
+
+    // Process logs (capture instruction outputs)
+    std::vector<std::string> logs;
+    std::mutex logMutex;
 
 public:
     Process(std::string pid, int totalInstructions = 0)
@@ -66,8 +71,13 @@ public:
             return false;
         }
 
-        // Execute instruction using process variable memory
-        int sleepTime = instructions[currentInstructionLine].execute(variables);
+        // Execute instruction silently (no console output) with logging
+        auto logCallback = [this](const std::string& logEntry) {
+            this->addLog(logEntry);
+        };
+        
+        // Pass false for printToConsole to suppress console output
+        int sleepTime = instructions[currentInstructionLine].execute(variables, logCallback, false);
         
         if (sleepTime > 0) {
             // Simulate sleep by just returning (actual sleep handled by CPU scheduler)
@@ -220,5 +230,51 @@ public:
     void setVariable(const std::string& name, uint16_t value)
     {
         variables[name] = value;
+    }
+
+    /**
+     * Adds a log entry to the process
+     */
+    void addLog(const std::string& logEntry)
+    {
+        std::lock_guard<std::mutex> lock(logMutex);
+        logs.push_back(logEntry);
+    }
+
+    /**
+     * Gets all process logs
+     */
+    std::vector<std::string> getLogs() const
+    {
+        return logs;
+    }
+
+    /**
+     * Clears all process logs
+     */
+    void clearLogs()
+    {
+        std::lock_guard<std::mutex> lock(logMutex);
+        logs.clear();
+    }
+
+    /**
+     * Gets a string representation of the current instruction
+     */
+    std::string getCurrentInstructionStr() const
+    {
+        if (currentInstructionLine >= instructions.size()) {
+            return "No instruction (process finished)";
+        }
+        
+        const auto& instr = instructions[currentInstructionLine];
+        std::string result = instr.getCommand();
+        
+        auto args = instr.getArgs();
+        for (const auto& arg : args) {
+            result += " " + arg;
+        }
+        
+        return result;
     }
 };

@@ -7,6 +7,7 @@
 #include <thread>
 #include <chrono>
 #include <cstdint>
+#include <functional>
 
 enum class InstructionType {
     PRINT,
@@ -61,26 +62,39 @@ public:
      * Returns number of CPU ticks consumed (0 for instant, >0 for sleep).
      */
     int execute(std::unordered_map<std::string, uint16_t> &variables) const {
+        return execute(variables, nullptr, false);
+    }
+
+    /**
+     * Executes the instruction with optional logging callback.
+     * Returns number of CPU ticks consumed (0 for instant, >0 for sleep).
+     * @param printToConsole - if true, prints to console; if false, only logs silently
+     */
+    int execute(std::unordered_map<std::string, uint16_t> &variables, 
+                std::function<void(const std::string&)> logCallback,
+                bool printToConsole = true) const {
         switch (type) {
             case InstructionType::PRINT:
-                executePrint(variables);
+                executePrint(variables, logCallback, printToConsole);
                 return 0;
             case InstructionType::DECLARE:
-                executeDeclare(variables);
+                executeDeclare(variables, logCallback, printToConsole);
                 return 0;
             case InstructionType::ADD:
-                executeAdd(variables);
+                executeAdd(variables, logCallback, printToConsole);
                 return 0;
             case InstructionType::SUBTRACT:
-                executeSubtract(variables);
+                executeSubtract(variables, logCallback, printToConsole);
                 return 0;
             case InstructionType::SLEEP:
-                return executeSleep();
+                return executeSleep(logCallback, printToConsole);
             case InstructionType::FOR:
-                executeFor(variables);
+                executeFor(variables, logCallback, printToConsole);
                 return 0;
             default:
-                std::cerr << "[ERROR] Unknown instruction: " << command << std::endl;
+                std::string errMsg = "[ERROR] Unknown instruction: " + command;
+                if (printToConsole) std::cerr << errMsg << std::endl;
+                if (logCallback) logCallback(errMsg);
                 return 0;
         }
     }
@@ -104,9 +118,13 @@ private:
     }
 
     // Print
-    void executePrint(const std::unordered_map<std::string, uint16_t> &vars) const {
+    void executePrint(const std::unordered_map<std::string, uint16_t> &vars,
+                     std::function<void(const std::string&)> logCallback = nullptr,
+                     bool printToConsole = true) const {
         if (args.empty()) {
-            std::cout << "[PRINT] (no message)\n";
+            std::string msg = "[PRINT] (no message)";
+            if (printToConsole) std::cout << msg << "\n";
+            if (logCallback) logCallback(msg);
             return;
         }
 
@@ -124,13 +142,19 @@ private:
             }
         }
 
-        std::cout << "[PRINT] " << msg.str() << std::endl;
+        std::string output = "[PRINT] " + msg.str();
+        if (printToConsole) std::cout << output << std::endl;
+        if (logCallback) logCallback(output);
     }
 
     // Declare
-    void executeDeclare(std::unordered_map<std::string, uint16_t> &vars) const {
+    void executeDeclare(std::unordered_map<std::string, uint16_t> &vars,
+                       std::function<void(const std::string&)> logCallback = nullptr,
+                       bool printToConsole = true) const {
         if (args.size() < 2) {
-            std::cerr << "[ERROR] DECLARE requires 2 arguments (var, value)\n";
+            std::string errMsg = "[ERROR] DECLARE requires 2 arguments (var, value)";
+            if (printToConsole) std::cerr << errMsg << "\n";
+            if (logCallback) logCallback(errMsg);
             return;
         }
 
@@ -138,13 +162,21 @@ private:
         uint16_t value = getValue(vars, args[1]);
         vars[var] = value;
 
-        std::cout << "[DECLARE] " << var << " = " << value << std::endl;
+        std::ostringstream oss;
+        oss << "[DECLARE] " << var << " = " << value;
+        std::string output = oss.str();
+        if (printToConsole) std::cout << output << std::endl;
+        if (logCallback) logCallback(output);
     }
 
     // Add
-    void executeAdd(std::unordered_map<std::string, uint16_t> &vars) const {
+    void executeAdd(std::unordered_map<std::string, uint16_t> &vars,
+                   std::function<void(const std::string&)> logCallback = nullptr,
+                   bool printToConsole = true) const {
         if (args.size() < 3) {
-            std::cerr << "[ERROR] ADD requires 3 arguments (var1, var2/value, var3/value)\n";
+            std::string errMsg = "[ERROR] ADD requires 3 arguments (var1, var2/value, var3/value)";
+            if (printToConsole) std::cerr << errMsg << "\n";
+            if (logCallback) logCallback(errMsg);
             return;
         }
 
@@ -157,13 +189,21 @@ private:
         if (result > 65535) result = 65535;
         vars[dest] = static_cast<uint16_t>(result);
 
-        std::cout << "[ADD] " << dest << " = " << a << " + " << b << " = " << result << std::endl;
+        std::ostringstream oss;
+        oss << "[ADD] " << dest << " = " << a << " + " << b << " = " << result;
+        std::string output = oss.str();
+        if (printToConsole) std::cout << output << std::endl;
+        if (logCallback) logCallback(output);
     }
 
     // Subtract
-    void executeSubtract(std::unordered_map<std::string, uint16_t> &vars) const {
+    void executeSubtract(std::unordered_map<std::string, uint16_t> &vars,
+                        std::function<void(const std::string&)> logCallback = nullptr,
+                        bool printToConsole = true) const {
         if (args.size() < 3) {
-            std::cerr << "[ERROR] SUBTRACT requires 3 arguments (var1, var2/value, var3/value)\n";
+            std::string errMsg = "[ERROR] SUBTRACT requires 3 arguments (var1, var2/value, var3/value)";
+            if (printToConsole) std::cerr << errMsg << "\n";
+            if (logCallback) logCallback(errMsg);
             return;
         }
 
@@ -175,13 +215,20 @@ private:
         if (result < 0) result = 0;
         vars[dest] = static_cast<uint16_t>(result);
 
-        std::cout << "[SUBTRACT] " << dest << " = " << a << " - " << b << " = " << result << std::endl;
+        std::ostringstream oss;
+        oss << "[SUBTRACT] " << dest << " = " << a << " - " << b << " = " << result;
+        std::string output = oss.str();
+        if (printToConsole) std::cout << output << std::endl;
+        if (logCallback) logCallback(output);
     }
 
     // Sleep
-    int executeSleep() const {
+    int executeSleep(std::function<void(const std::string&)> logCallback = nullptr,
+                    bool printToConsole = true) const {
         if (args.empty()) {
-            std::cerr << "[ERROR] SLEEP requires 1 argument (ticks)\n";
+            std::string errMsg = "[ERROR] SLEEP requires 1 argument (ticks)";
+            if (printToConsole) std::cerr << errMsg << "\n";
+            if (logCallback) logCallback(errMsg);
             return 0;
         }
 
@@ -190,27 +237,43 @@ private:
             if (ticks < 0) ticks = 0;
             if (ticks > 255) ticks = 255;
 
-            std::cout << "[SLEEP] Sleeping for " << ticks << " ticks\n";
+            std::ostringstream oss;
+            oss << "[SLEEP] Sleeping for " << ticks << " ticks";
+            std::string output = oss.str();
+            if (printToConsole) std::cout << output << "\n";
+            if (logCallback) logCallback(output);
             return ticks; // return sleep duration for CPU to handle
         } catch (...) {
-            std::cerr << "[ERROR] Invalid SLEEP argument: " << args[0] << std::endl;
+            std::ostringstream oss;
+            oss << "[ERROR] Invalid SLEEP argument: " << args[0];
+            std::string errMsg = oss.str();
+            if (printToConsole) std::cerr << errMsg << std::endl;
+            if (logCallback) logCallback(errMsg);
             return 0;
         }
     }
 
     // For
-    void executeFor(std::unordered_map<std::string, uint16_t> &vars) const {
+    void executeFor(std::unordered_map<std::string, uint16_t> &vars,
+                   std::function<void(const std::string&)> logCallback = nullptr,
+                   bool printToConsole = true) const {
         if (args.empty()) {
-            std::cerr << "[ERROR] FOR requires repeat count\n";
+            std::string errMsg = "[ERROR] FOR requires repeat count";
+            if (printToConsole) std::cerr << errMsg << "\n";
+            if (logCallback) logCallback(errMsg);
             return;
         }
 
         uint16_t repeatCount = getValue(vars, args.back());
-        std::cout << "[FOR] Repeating " << repeatCount << " times\n";
+        std::ostringstream oss;
+        oss << "[FOR] Repeating " << repeatCount << " times";
+        std::string output = oss.str();
+        if (printToConsole) std::cout << output << "\n";
+        if (logCallback) logCallback(output);
 
         for (uint16_t i = 0; i < repeatCount; ++i) {
             for (const auto &instr : subInstructions) {
-                instr.execute(vars);
+                instr.execute(vars, logCallback, printToConsole);
             }
         }
     }
