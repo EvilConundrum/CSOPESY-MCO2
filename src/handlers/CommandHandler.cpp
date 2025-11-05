@@ -1,3 +1,4 @@
+#pragma once
 #include <iostream>
 #include <vector>
 #include <string>
@@ -6,12 +7,14 @@
 
 enum Commands
 {
-    UNKNOWN = -1,
+    UNKNOWN = -2,
+    UNINITIALIZED,
     INITIALIZE,
     EXIT,
     SCREEN,
     SCHEDULER_START,
     SCHEDULER_STOP,
+    PROCESS_SMI,
     REPORT_UTIL,
 };
 
@@ -20,50 +23,55 @@ class CommandHandler
 public:
     CommandHandler() {}
 
-    void parseCommand(std::vector<std::string> args, std::atomic<bool> &running)
+    void parseCommand(std::vector<std::string> args, std::atomic<bool> &isRunning, std::atomic<bool> &isInitialized, std::atomic<Commands> &opcode, std::atomic<int> &screenMode)
     {
-        if (args.empty())
-        {
-            std::cout << "No command entered." << std::endl;
-            return;
-        }
-
         const std::string &command = args[0];
-        args.erase(args.begin());
-        Commands cmdEnum = this->getCommandEnum(command);
-        
-        bool initialized = false;
 
-        if (!initialized && cmdEnum != INITIALIZE)
+        Commands cmdEnum = this->getCommandEnum(command);
+
+        if (!isInitialized && cmdEnum != INITIALIZE && cmdEnum != EXIT && cmdEnum != UNKNOWN)
         {
             std::cout << "System not initialized. Please run 'initialize' command first." << std::endl;
+            opcode = UNINITIALIZED;
             return;
         }
+
+        opcode = cmdEnum;
 
         switch (cmdEnum)
         {
-        case INITIALIZE:
-            loadConfig();
-            initialized = true;
-            break;
-        case EXIT:
-            running = false;
-            break;
         case SCREEN:
-            // TODO: Handle screen command
+            // check second parameter
+
+            if (args.size() < 2)
+            {
+                std::cout << "Usage: screen <-s|-r|-ls> [<name>]" << std::endl;
+                opcode = UNKNOWN;
+                break;
+            }
+
+            if (args[1] == "-s" && args.size() >= 3)
+                screenMode = 1; // create screen
+            else if (args[1] == "-r" && args.size() >= 3)
+                screenMode = 2; // view specific screen
+            else if (args[1] == "-ls" && args.size() == 2)
+                screenMode = 3; // list screens
+            else
+            {
+                std::cout << "Unknown screen option: " << args[1] << std::endl;
+                opcode = UNKNOWN;
+            }
+
             break;
+
+        case INITIALIZE:
+        case EXIT:
         case SCHEDULER_START:
-            // TODO: Handle scheduler start command
-            break;
         case SCHEDULER_STOP:
-            // TODO: Handle scheduler stop command
-            break;
+        case PROCESS_SMI:
         case REPORT_UTIL:
-            // TODO: Handle report utility command
-            break;
         case UNKNOWN:
         default:
-            std::cout << "Unknown command." << std::endl;
             break;
         }
     }
@@ -74,9 +82,9 @@ private:
      */
     Commands getCommandEnum(const std::string &command)
     {
-        if (command == "initialize")
+        if (command == "initialize" or command == "init")
             return INITIALIZE;
-        else if (command == "exit")
+        else if (command == "exit" or command == "quit")
             return EXIT;
         else if (command == "screen")
             return SCREEN;

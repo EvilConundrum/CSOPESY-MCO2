@@ -38,9 +38,8 @@ private:
             "  \\____|_|  \\___|\\__, |\\__, |\\__, |\\___/|____/ \n"
             "                 |___/ |___/ |___/             \n");
 
+        this->displayMessage();
         this->displayMessage("Welcome to GreggyOS");
-
-        this->displayMessage("Type 'help' to see available commands.");
         this->displayMessage();
     }
 };
