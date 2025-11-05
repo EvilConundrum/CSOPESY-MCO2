@@ -1,7 +1,7 @@
 #pragma once
 #include "../model/Process.cpp"
 #include "../model/Config.cpp"
-#include "ScreenHandler.cpp"
+// #include "ScreenHandler.cpp"  // Commented out to avoid circular dependency
 #include <fstream>
 #include <iostream>
 #include <iomanip>
@@ -11,6 +11,9 @@
 #include <sstream>
 #include <ctime>
 #include <algorithm>
+
+// Forward declaration to avoid circular dependency
+class ScreenHandler;
 
 class ReportHandler {
 private:
@@ -174,11 +177,14 @@ public:
      * Call this before generating reports
      */
     void syncProcessLists() {
-        if (!screenHandler) return;
+        // This method now just updates cores used since data is injected from main
+        updateCoresUsed();
+    }
 
-        // Get all processes from ScreenHandler
-        auto allProcesses = screenHandler->getAllProcesses();
-        
+    /**
+     * Updates process lists from external source (called by main)
+     */
+    void updateProcessLists(const std::vector<std::shared_ptr<Process>>& allProcesses) {
         // Clear current lists
         runningProcesses.clear();
         
@@ -189,12 +195,14 @@ public:
                 if (std::find(completedProcesses.begin(), completedProcesses.end(), process) 
                     == completedProcesses.end()) {
                     completedProcesses.push_back(process);
+                    totalProcessesCompleted++;
                 }
             } else {
                 runningProcesses.push_back(process);
             }
         }
         
+        totalProcessesCreated = allProcesses.size();
         updateCoresUsed();
     }
 
