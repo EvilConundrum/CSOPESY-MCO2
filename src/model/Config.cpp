@@ -84,8 +84,19 @@ private:
 
         if (key == "num-cpu")
             this->num_cpus = std::stoi(value);
-        else if (key == "schedule")
-            this->scheduler_algorithm = value;
+        else if (key == "scheduler")
+        {
+            // strip quoation marks if present
+
+            if (value.front() == '"' && value.back() == '"')
+            {
+                this->scheduler_algorithm = value.substr(1, value.size() - 2);
+            }
+            else
+            {
+                this->scheduler_algorithm = value;
+            }
+        }
         else if (key == "quantum-cycles")
             this->quantum_cycles = std::stoi(value);
         else if (key == "batch-process-freq")
