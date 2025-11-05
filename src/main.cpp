@@ -10,8 +10,9 @@
 #include "model\CPU.cpp"
 #include "handlers\ScheduleHandler.cpp"
 #include "handlers\GeneratorHandler.cpp"
-#include "view\CLI.cpp"
 #include "handlers\CommandHandler.cpp"
+#include "handlers\ReportHandler.cpp"
+#include "view\CLI.cpp"
 
 /**  TODO: TLDR there will be 2 threads:
  *   - Main thread: handles CLI input and command parsing
@@ -30,6 +31,7 @@ class GreggyOS
     Config *config;
     std::shared_ptr<ScheduleHandler> scheduler;
     std::shared_ptr<GeneratorHandler> processGenerator;
+    std::shared_ptr<ReportHandler> report;
     CommandHandler commandHandler;
     std::string configFilePath;
     std::mutex screenMutex;
@@ -51,6 +53,7 @@ public:
         // spawn threads
         this->schedulerThread = std::thread(&GreggyOS::schedulerLoop, this, std::ref(this->isRunning), std::ref(this->isInitialized));
         this->cliThread = std::thread(&GreggyOS::commandThread, this, std::ref(this->isRunning), std::ref(this->isInitialized));
+        this->report = std::make_shared<ReportHandler>(this->config);
 
         this->schedulerThread.join();
         this->cliThread.join();
@@ -60,6 +63,15 @@ public:
     {
         try
         {
+            // Check if config file exists first
+            std::ifstream configCheck("config.txt");
+            if (!configCheck.good())
+            {
+                this->cli.displayMessage("Error: config.txt not found. Please ensure the configuration file exists.");
+                return;
+            }
+            configCheck.close();
+
             Config lConfig("config.txt");
             *this->config = lConfig;
 
@@ -80,7 +92,7 @@ public:
         }
         catch (const std::exception &e)
         {
-            std::cerr << e.what() << '\n';
+            this->cli.displayMessage("Error initializing system: " + std::string(e.what()));
         }
     }
 
@@ -104,8 +116,12 @@ public:
             // Execute scheduling cycle
             scheduler->executeSchedulingCycle(cpus);
 
-            // Small delay to prevent CPU spin
-            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+            // Small delay based on config (delays-per-exec)
+            // This simulates the "busy-wait" between instruction executions
+            if (config->getDelayPerExec() > 0)
+            {
+                std::this_thread::sleep_for(std::chrono::microseconds(config->getDelayPerExec()));
+            }
         }
     }
 
@@ -125,9 +141,9 @@ public:
             scheduler->addProcess(newProcess);
             lastBatchTick = currentTick;
 
-            // Optional: Log process generation (can be removed for cleaner output)
-            std::cout << "[Scheduler] Generated process: " << newProcess->getPID()
-                      << " at tick " << currentTick << std::endl;
+            // Optional: Log process generation (disabled to avoid console spam)
+            // std::cout << "[Scheduler] Generated process: " << newProcess->getPID()
+            //           << " at tick " << currentTick << std::endl;
         }
     }
 
@@ -160,6 +176,15 @@ public:
 
         isSchedulerRunning = false;
         cli.displayMessage("Scheduler stopped. Automatic process generation disabled.");
+    }
+
+    /**
+     * Generates and displays CPU utilization report
+     * Also saves to csopesy-log.txt as per spec
+     */
+    void generateUtilizationReport()
+    {
+        report->generateStatusReport(true);
     }
 
     void commandThread(std::atomic<bool> &isRunning, std::atomic<bool> &isInitialized)
@@ -200,7 +225,7 @@ public:
                 break;
             
             case REPORT_UTIL:
-                // TODO: Generate utilization report
+                this->generateUtilizationReport();
                 break;
             
             case SCREEN:
@@ -236,7 +261,9 @@ public:
                     this->cli.displayMessage("Listing all screens...");
                     break;
                 }
+                break; // Break from SCREEN case
             }
+            
             default:
                 break;
             }
