@@ -66,7 +66,7 @@ public:
                 // Execute next instruction and check if process needs requeuing
                 auto processToRequeue = cpu.executeNext();
                 
-                // If process was preempted (time quantum expired), requeue it
+                // If process was preempted, requeue it
                 if (processToRequeue != nullptr && !processToRequeue->isFinished())
                 {
                     if (schedulerType == "rr")
