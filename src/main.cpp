@@ -53,7 +53,7 @@ public:
         // spawn threads
         this->schedulerThread = std::thread(&GreggyOS::schedulerLoop, this, std::ref(this->isRunning), std::ref(this->isInitialized));
         this->cliThread = std::thread(&GreggyOS::commandThread, this, std::ref(this->isRunning), std::ref(this->isInitialized));
-        this->report = std::make_shared<ReportHandler>(this->config);
+        this->reportHandler = std::make_shared<ReportHandler>(this->config);
 
         this->schedulerThread.join();
         this->cliThread.join();
@@ -187,7 +187,7 @@ public:
      */
     void generateUtilizationReport()
     {
-        report->generateStatusReport(true);
+        reportHandler->generateStatusReport(true);
     }
 
     void commandThread(std::atomic<bool> &isRunning, std::atomic<bool> &isInitialized)
