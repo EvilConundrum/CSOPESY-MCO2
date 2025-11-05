@@ -105,7 +105,7 @@ private:
             this->min_instructions = std::stoi(value);
         else if (key == "max-ins")
             this->max_instructions = std::stoi(value);
-        else if (key == "delay-per-exec")
+        else if (key == "delay-per-exec" || key == "delay_per_exec")
             this->delay_per_exec = std::stoi(value);
         else if (key == "time-between-instructions")
             this->time_between_instructions = std::stoi(value);
