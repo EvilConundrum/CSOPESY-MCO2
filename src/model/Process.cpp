@@ -1,3 +1,4 @@
+#pragma once
 #include <string>
 #include <queue>
 #include <vector>
@@ -66,7 +67,12 @@ public:
         }
 
         // 🔹 Execute instruction using process variable memory
-        instructions[currentInstructionLine].execute(variables);
+        int sleepTime = instructions[currentInstructionLine].execute(variables);
+        
+        if (sleepTime > 0) {
+            // Simulate sleep by just returning (actual sleep handled by CPU scheduler)
+            return true;
+        }
 
         currentInstructionLine++;
         return true;

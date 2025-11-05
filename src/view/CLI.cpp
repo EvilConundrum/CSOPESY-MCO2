@@ -1,3 +1,4 @@
+#pragma once
 #include <iostream>
 #include <string>
 #include <vector>
@@ -15,12 +16,12 @@ public:
         std::cout << message << std::endl;
     }
 
-    std::vector<std::string> getUserInput(std::string currentDirectory)
+    std::string getUserInput(std::string currentDirectory)
     {
         std::string input;
         std::cout << currentDirectory << ">";
         std::getline(std::cin, input);
-        return {input};
+        return input;
     }
 
 private:
@@ -44,10 +45,10 @@ private:
     }
 };
 
-int main()
-{
-    std::string currentDirectory = "C:\\GreggyOS";
-    CommandLineInterface handler;
-    handler.getUserInput(currentDirectory);
-    return 0;
-}
+// int main()
+// {
+//     std::string currentDirectory = "C:\\GreggyOS";
+//     CommandLineInterface handler;
+//     handler.getUserInput(currentDirectory);
+//     return 0;
+// }
