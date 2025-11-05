@@ -206,7 +206,6 @@ public:
         updateCoresUsed();
     }
 
-private:
     /**
      * Generates the status report content (used by both screen -ls and report-util)
      */
@@ -280,7 +279,6 @@ private:
         return report.str();
     }
 
-public:
     // Getters for other components
     std::vector<std::shared_ptr<Process>> getRunningProcesses() const {
         return runningProcesses;
