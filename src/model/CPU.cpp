@@ -56,7 +56,7 @@ public:
                 {
                     this->timeLeft--;
                 }
-                else
+                else if (this->timeQuantum > 0 && this->timeLeft <= 0)
                 {
                     // Time quantum expired - need to requeue process
                     this->timeLeft = this->timeQuantum;
@@ -66,6 +66,11 @@ public:
                     auto processToRequeue = this->currProcess;
                     this->currProcess = nullptr;
                     return processToRequeue;
+                } else if (this->timeQuantum == 0) {
+                    // No time quantum (FCFS), just continue
+                    this->timeLeft = this->timeQuantum;
+                    this->currProcess->setState(ProcessState::READY);
+                    return nullptr;
                 }
             }
 
