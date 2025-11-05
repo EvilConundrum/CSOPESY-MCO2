@@ -4,6 +4,8 @@
 #include <random>
 #include <string>
 #include <vector>
+#include <sstream>
+#include <iomanip>
 #include <unordered_set>
 #include <algorithm>
 #include "../model/Process.cpp"
@@ -23,11 +25,15 @@ public:
 
     /**
      * Generates a new process with random instructions based on config
+     * Process naming follows spec: p01, p02, ..., p1240
      */
     std::shared_ptr<Process> generateProcess(const Config &config)
     {
-        // Generate process name
-        std::string processName = "process_" + std::to_string(processCounter++);
+        // Generate process name with proper formatting (p01, p02, etc.)
+        processCounter++;
+        std::stringstream ss;
+        ss << "p" << std::setfill('0') << std::setw(2) << processCounter;
+        std::string processName = ss.str();
 
         // Determine number of instructions
         std::uniform_int_distribution<int> distInstr(config.getMinInstructions(), config.getMaxInstructions());

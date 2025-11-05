@@ -1,13 +1,17 @@
 #include <iostream>
 #include <vector>
+#include <fstream>
+#include <sstream>
+#include <iomanip>
+#include <ctime>
+#include <thread>
+#include <atomic>
 #include "model\Config.cpp"
 #include "model\CPU.cpp"
 #include "handlers\ScheduleHandler.cpp"
-#include "handlers\ReportHandler.cpp"
+#include "handlers\GeneratorHandler.cpp"
 #include "view\CLI.cpp"
 #include "handlers\CommandHandler.cpp"
-#include <thread>
-#include <atomic>
 
 /**  TODO: TLDR there will be 2 threads:
  *   - Main thread: handles CLI input and command parsing
@@ -19,15 +23,17 @@ class GreggyOS
     std::vector<CPU> cpus;
     std::atomic<bool> isInitialized;
     std::atomic<bool> isRunning;
+    std::atomic<bool> isSchedulerRunning;
     std::thread schedulerThread;
     std::thread cliThread;
     CommandLineInterface cli;
     Config *config;
     std::shared_ptr<ScheduleHandler> scheduler;
-    std::shared_ptr<ReportHandler> reportHandler;
+    std::shared_ptr<GeneratorHandler> processGenerator;
     CommandHandler commandHandler;
     std::string configFilePath;
     std::mutex screenMutex;
+    unsigned long long lastBatchTick;
 
 public:
     GreggyOS(std::string configFilePath)
@@ -36,8 +42,11 @@ public:
         this->cli = CommandLineInterface();
         this->isInitialized = false;
         this->isRunning = true;
+        this->isSchedulerRunning = false;
+        this->lastBatchTick = 0;
 
         this->config = new Config(this->configFilePath);
+        this->processGenerator = std::make_shared<GeneratorHandler>();
 
         // spawn threads
         this->schedulerThread = std::thread(&GreggyOS::schedulerLoop, this, std::ref(this->isRunning), std::ref(this->isInitialized));
@@ -63,9 +72,6 @@ public:
 
             this->cli.displayMessage("Scheduler initialized with algorithm: " + this->config->getSchedulerAlgorithm() + " and quantum cycles: " + std::to_string(this->config->getQuantumCycles()));
 
-            // Initialize ReportHandler
-            this->reportHandler = std::make_shared<ReportHandler>(this->config);
-
             // spawn CPUs based on config
             for (int i = 0; i < this->config->getNumCpus(); ++i)
                 cpus.emplace_back(i, this->config->getQuantumCycles());
@@ -82,9 +88,78 @@ public:
     {
         while (isRunning)
         {
+            // Only execute if initialized
+            if (!isInitialized || scheduler == nullptr)
+            {
+                std::this_thread::sleep_for(std::chrono::milliseconds(100));
+                continue;
+            }
+
+            // Generate new processes if scheduler is running
+            if (isSchedulerRunning)
+            {
+                generateBatchProcessIfNeeded();
+            }
+
+            // Execute scheduling cycle
             scheduler->executeSchedulingCycle(cpus);
-            std::this_thread::sleep_for(std::chrono::seconds(1));
+
+            // Small delay to prevent CPU spin
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
         }
+    }
+
+    /**
+     * Generates a new batch process based on the configured frequency
+     * Called automatically when scheduler is running
+     */
+    void generateBatchProcessIfNeeded()
+    {
+        unsigned long long currentTick = scheduler->getCpuTicks();
+        int batchFreq = config->getBatchProcessFreq();
+
+        // Check if it's time to generate a new process
+        if (currentTick - lastBatchTick >= batchFreq)
+        {
+            auto newProcess = processGenerator->generateProcess(*config);
+            scheduler->addProcess(newProcess);
+            lastBatchTick = currentTick;
+
+            // Optional: Log process generation (can be removed for cleaner output)
+            std::cout << "[Scheduler] Generated process: " << newProcess->getPID()
+                      << " at tick " << currentTick << std::endl;
+        }
+    }
+
+    /**
+     * Starts the automatic batch process generator
+     */
+    void startScheduler()
+    {
+        if (isSchedulerRunning)
+        {
+            cli.displayMessage("Scheduler is already running.");
+            return;
+        }
+
+        isSchedulerRunning = true;
+        lastBatchTick = scheduler->getCpuTicks();
+        cli.displayMessage("Scheduler started. Automatic process generation enabled.");
+    }
+
+    /**
+     * Stops the automatic batch process generator
+     */
+    void stopScheduler()
+    {
+        if (!isSchedulerRunning)
+        {
+            cli.displayMessage("Scheduler is not running.");
+            return;
+        }
+
+        isSchedulerRunning = false;
+        cli.displayMessage("Scheduler stopped. Automatic process generation disabled.");
     }
 
     void commandThread(std::atomic<bool> &isRunning, std::atomic<bool> &isInitialized)
@@ -115,31 +190,19 @@ public:
                 isRunning = false;
                 this->cli.displayMessage("Exiting GreggyOS...");
                 break;
-
-            case PROCESS_SMI:
-                if (reportHandler)
-                {
-                    syncReportHandlerData(); // Sync data first
-                    reportHandler->displayScreenList();
-                }
-                else
-                {
-                    std::cout << "Report handler not initialized.\n";
-                }
+            
+            case SCHEDULER_START:
+                this->startScheduler();
                 break;
-
+            
+            case SCHEDULER_STOP:
+                this->stopScheduler();
+                break;
+            
             case REPORT_UTIL:
-                if (reportHandler)
-                {
-                    syncReportHandlerData(); // Sync data first
-                    reportHandler->generateUtilizationReport("csopesy-log.txt");
-                }
-                else
-                {
-                    std::cout << "Report handler not initialized.\n";
-                }
+                // TODO: Generate utilization report
                 break;
-
+            
             case SCREEN:
             {
                 std::lock_guard<std::mutex> lock(screenMutex);
@@ -177,15 +240,6 @@ public:
             default:
                 break;
             }
-        }
-    }
-
-    void syncReportHandlerData()
-    {
-        if (screenHandler && reportHandler)
-        {
-            auto allProcesses = screenHandler->getAllProcesses();
-            reportHandler->updateProcessLists(allProcesses);
         }
     }
 };
