@@ -1,0 +1,14 @@
+CPU Utilization Report
+Generated on: 11/05/2025, 09:44:44 PM
+===============================================
+
+CPU utilization: 0.00%
+Cores used: 0
+Cores available: 4
+----------------------------------------------
+Running processes:
+No running processes.
+
+Finished processes:
+No finished processes.
+----------------------------------------------

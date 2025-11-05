@@ -31,7 +31,7 @@ class GreggyOS
     Config *config;
     std::shared_ptr<ScheduleHandler> scheduler;
     std::shared_ptr<GeneratorHandler> processGenerator;
-    std::shared_ptr<ReportHandler> report;
+    std::shared_ptr<ReportHandler> reportHandler;
     CommandHandler commandHandler;
     std::string configFilePath;
     std::mutex screenMutex;
@@ -83,6 +83,9 @@ public:
                 this->config->getQuantumCycles());
 
             this->cli.displayMessage("Scheduler initialized with algorithm: " + this->config->getSchedulerAlgorithm() + " and quantum cycles: " + std::to_string(this->config->getQuantumCycles()));
+
+            // Initialize report handler
+            this->reportHandler = std::make_shared<ReportHandler>(this->config);
 
             // spawn CPUs based on config
             for (int i = 0; i < this->config->getNumCpus(); ++i)
@@ -225,7 +228,14 @@ public:
                 break;
             
             case REPORT_UTIL:
-                this->generateUtilizationReport();
+                if (reportHandler != nullptr)
+                {
+                    reportHandler->generateUtilizationReport();
+                }
+                else
+                {
+                    cli.displayMessage("System not initialized. Cannot generate report.");
+                }
                 break;
             
             case SCREEN:
