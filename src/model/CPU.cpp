@@ -68,7 +68,6 @@ public:
                     return processToRequeue;
                 } else if (this->timeQuantum == 0) {
                     // No time quantum (FCFS), just continue
-                    this->timeLeft = this->timeQuantum;
                     this->currProcess->setState(ProcessState::READY);
                     return nullptr;
                 }
