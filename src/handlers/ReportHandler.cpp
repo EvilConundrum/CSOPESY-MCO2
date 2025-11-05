@@ -1,3 +1,4 @@
+#pragma once
 #include "../model/Process.cpp"
 #include "../model/Config.cpp"
 #include "ScreenHandler.cpp"
