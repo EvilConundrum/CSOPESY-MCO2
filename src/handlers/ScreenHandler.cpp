@@ -1,6 +1,8 @@
 #include "../model/Process.cpp"
 #include "../model/Config.cpp"
 #include "GeneratorHandler.cpp"
+#include "ScheduleHandler.cpp"
+#include "ReportHandler.cpp"
 #include <map>
 #include <memory>
 #include <mutex>
@@ -11,11 +13,19 @@ private:
     std::map<std::string, std::shared_ptr<Process>> processes;
     std::mutex processesMutex;
     Config* config;
-    GeneratorHandler* generator; // Reference to GeneratorHandler
+    GeneratorHandler* generator;
+    ScheduleHandler* scheduleHandler;
+    ReportHandler* reportHandler;
 
 public:
-    ScreenHandler(Config* configPtr, GeneratorHandler* generatorPtr) 
-        : config(configPtr), generator(generatorPtr) {}
+    ScreenHandler(Config* configPtr, 
+                  GeneratorHandler* generatorPtr,
+                  ScheduleHandler* scheduleHandlerPtr,
+                  ReportHandler* reportHandlerPtr) 
+        : config(configPtr), 
+          generator(generatorPtr),
+          scheduleHandler(scheduleHandlerPtr),
+          reportHandler(reportHandlerPtr) {}
 
     /**
      * Creates a new process screen (screen -s <name>)
@@ -35,6 +45,16 @@ public:
         
         // Store in registry (PID already equals processName)
         processes[processName] = process;
+        
+        // ADD TO SCHEDULER (Critical!)
+        if (scheduleHandler) {
+            scheduleHandler->addProcess(process);
+        }
+        
+        // NOTIFY REPORT HANDLER (Important!)
+        if (reportHandler) {
+            reportHandler->recordProcessStart(process);
+        }
         
         std::cout << "Process " << processName << " created with " 
                   << process->getTotalInstructions() << " instructions.\n";
