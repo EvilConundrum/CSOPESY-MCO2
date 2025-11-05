@@ -4,17 +4,22 @@
 #include "../model/readyqueue/RoundRobin.cpp"
 #include <vector>
 #include <memory>
+#include <atomic>
+#include <string>
 
 class ScheduleHandler
 {
 private:
     std::shared_ptr<ReadyQueue> readyQueue;
     std::string schedulerType;
+    std::atomic<unsigned long long> cpuTicks;
 
 public:
     ScheduleHandler(const std::string &schedulerType, int timeQuantum = 5)
         : schedulerType(schedulerType)
     {
+        this->cpuTicks = 0;
+
         // Initialize the appropriate scheduler
         if (schedulerType == "fcfs") {
             readyQueue = std::make_shared<FCFS>();
@@ -57,9 +62,13 @@ public:
      * Executes one scheduling cycle
      * - Executes instructions on all CPUs
      * - Handles process completion and preemption (for Round Robin)
+     * - Increments CPU tick counter
      */
     void executeSchedulingCycle(std::vector<CPU> &cpus)
     {
+        // Increment CPU tick counter at the start of each cycle
+        cpuTicks++;
+
         for (auto &cpu : cpus)
         {
             if (!cpu.isIdle())
@@ -120,5 +129,32 @@ public:
     bool isReadyQueueEmpty()
     {
         return readyQueue->empty();
+    }
+
+    /**
+     * Gets the current CPU tick count
+     * @return Current number of CPU ticks (scheduling cycles executed)
+     */
+    unsigned long long getCpuTicks() const
+    {
+        return cpuTicks.load();
+    }
+
+    /**
+     * Resets the CPU tick counter to zero
+     * Useful for testing or when restarting the scheduler
+     */
+    void resetCpuTicks()
+    {
+        cpuTicks = 0;
+    }
+
+    /**
+     * Gets CPU tick count as string for display
+     * @return Formatted string with current tick count
+     */
+    std::string getCpuTicksString() const
+    {
+        return "CPU Ticks: " + std::to_string(cpuTicks.load());
     }
 };
