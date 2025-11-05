@@ -28,7 +28,7 @@ class Process
     // Memory usage info (for later expansion)
     int memoryRequired;
 
-    // 🔹 Variable storage (persistent process memory)
+    // Variable storage (persistent process memory)
     std::unordered_map<std::string, uint16_t> variables;
 
 public:
@@ -66,7 +66,7 @@ public:
             return false;
         }
 
-        // 🔹 Execute instruction using process variable memory
+        // Execute instruction using process variable memory
         int sleepTime = instructions[currentInstructionLine].execute(variables);
         
         if (sleepTime > 0) {

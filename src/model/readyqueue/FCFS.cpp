@@ -5,7 +5,6 @@
  * FCFS (First Come First Serve) Scheduler
  * - Non-preemptive scheduling algorithm
  * - Processes are executed in the order they arrive
- * - Simple queue-based implementation (inherits from ReadyQueue)
  */
 class FCFS : public ReadyQueue
 {
