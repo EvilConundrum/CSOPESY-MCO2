@@ -1,29 +1,35 @@
+#pragma once
 #include <string>
 #include <queue>
 #include <vector>
 #include <chrono>
 #include <ctime>
+#include <unordered_map>
 #include "Instruction.cpp"
 
 enum class ProcessState { READY, RUNNING, WAITING, FINISHED };
 
 class Process
 {
+    // Basic process info
     std::string PID;
     std::vector<Instruction> instructions;
     ProcessState state;
-    
-    // Process metadata
+
+    // Instruction tracking
     int currentInstructionLine;
     int totalInstructions;
-    
-    // Timing information
+
+    // Timing info
     std::chrono::system_clock::time_point creationTime;
     std::chrono::system_clock::time_point startTime;
     std::chrono::system_clock::time_point endTime;
-    
-    // Memory information (for future use)
+
+    // Memory usage info (for later expansion)
     int memoryRequired;
+
+    // 🔹 Variable storage (persistent process memory)
+    std::unordered_map<std::string, uint16_t> variables;
 
 public:
     Process(std::string pid, int totalInstructions = 0)
@@ -50,7 +56,7 @@ public:
 
     /**
      * Executes the next instruction in the process
-     * Returns true if instruction was executed, false if no more instructions
+     * Returns true if instruction was executed, false if finished
      */
     bool executeNextInstruction()
     {
@@ -60,10 +66,15 @@ public:
             return false;
         }
 
-        // Execute the instruction
-        instructions[currentInstructionLine].execute();
-        currentInstructionLine++;
+        // 🔹 Execute instruction using process variable memory
+        int sleepTime = instructions[currentInstructionLine].execute(variables);
+        
+        if (sleepTime > 0) {
+            // Simulate sleep by just returning (actual sleep handled by CPU scheduler)
+            return true;
+        }
 
+        currentInstructionLine++;
         return true;
     }
 
@@ -124,7 +135,7 @@ public:
     void setState(ProcessState newState)
     {
         this->state = newState;
-        
+
         // Set start time when process begins running
         if (newState == ProcessState::RUNNING && currentInstructionLine == 0) {
             this->startTime = std::chrono::system_clock::now();
@@ -168,12 +179,13 @@ public:
     }
 
     /**
-     * Resets the process to initial state (for testing purposes)
+     * Resets the process to initial state
      */
     void reset()
     {
         currentInstructionLine = 0;
         state = ProcessState::READY;
+        variables.clear(); // 🔹 Reset variable memory too
     }
 
     /**
@@ -190,5 +202,23 @@ public:
     int getMemoryRequired() const
     {
         return memoryRequired;
+    }
+
+    // 🔹 Variable access helpers
+    const std::unordered_map<std::string, uint16_t>& getVariables() const
+    {
+        return variables;
+    }
+
+    uint16_t getVariable(const std::string& name) const
+    {
+        auto it = variables.find(name);
+        if (it != variables.end()) return it->second;
+        return 0;
+    }
+
+    void setVariable(const std::string& name, uint16_t value)
+    {
+        variables[name] = value;
     }
 };
