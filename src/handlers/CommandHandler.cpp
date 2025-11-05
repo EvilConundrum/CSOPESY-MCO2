@@ -88,11 +88,13 @@ private:
             return EXIT;
         else if (command == "screen")
             return SCREEN;
-        else if (command == "scheduler_start")
+        else if (command == "scheduler-start")
             return SCHEDULER_START;
-        else if (command == "scheduler_stop")
+        else if (command == "scheduler-stop")
             return SCHEDULER_STOP;
-        else if (command == "report_util")
+        else if (command == "process-smi")
+            return PROCESS_SMI;
+        else if (command == "report-util")
             return REPORT_UTIL;
         else
         {

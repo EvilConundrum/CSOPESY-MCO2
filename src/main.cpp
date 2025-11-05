@@ -3,6 +3,7 @@
 #include "model\Config.cpp"
 #include "model\CPU.cpp"
 #include "handlers\ScheduleHandler.cpp"
+#include "handlers\ReportHandler.cpp"
 #include "view\CLI.cpp"
 #include "handlers\CommandHandler.cpp"
 #include <thread>
@@ -23,6 +24,7 @@ class GreggyOS
     CommandLineInterface cli;
     Config *config;
     std::shared_ptr<ScheduleHandler> scheduler;
+    std::shared_ptr<ReportHandler> reportHandler;
     CommandHandler commandHandler;
     std::string configFilePath;
     std::mutex screenMutex;
@@ -60,6 +62,9 @@ public:
                 this->config->getQuantumCycles());
 
             this->cli.displayMessage("Scheduler initialized with algorithm: " + this->config->getSchedulerAlgorithm() + " and quantum cycles: " + std::to_string(this->config->getQuantumCycles()));
+
+            // Initialize ReportHandler
+            this->reportHandler = std::make_shared<ReportHandler>(this->config);
 
             // spawn CPUs based on config
             for (int i = 0; i < this->config->getNumCpus(); ++i)
@@ -110,6 +115,31 @@ public:
                 isRunning = false;
                 this->cli.displayMessage("Exiting GreggyOS...");
                 break;
+
+            case PROCESS_SMI:
+                if (reportHandler)
+                {
+                    syncReportHandlerData(); // Sync data first
+                    reportHandler->displayScreenList();
+                }
+                else
+                {
+                    std::cout << "Report handler not initialized.\n";
+                }
+                break;
+
+            case REPORT_UTIL:
+                if (reportHandler)
+                {
+                    syncReportHandlerData(); // Sync data first
+                    reportHandler->generateUtilizationReport("csopesy-log.txt");
+                }
+                else
+                {
+                    std::cout << "Report handler not initialized.\n";
+                }
+                break;
+
             case SCREEN:
             {
                 std::lock_guard<std::mutex> lock(screenMutex);
@@ -147,6 +177,15 @@ public:
             default:
                 break;
             }
+        }
+    }
+
+    void syncReportHandlerData()
+    {
+        if (screenHandler && reportHandler)
+        {
+            auto allProcesses = screenHandler->getAllProcesses();
+            reportHandler->updateProcessLists(allProcesses);
         }
     }
 };
