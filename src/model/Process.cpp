@@ -16,6 +16,7 @@ class Process
     std::string PID;
     std::vector<Instruction> instructions;
     ProcessState state;
+    int sleepTimeRemaining;
 
     // Instruction tracking
     int currentInstructionLine;
@@ -54,9 +55,7 @@ public:
     void addInstruction(Instruction instruction)
     {
         this->instructions.push_back(instruction);
-        if (totalInstructions == 0) {
-            totalInstructions = instructions.size();
-        }
+        totalInstructions = instructions.size();
     }
 
     /**
