@@ -14,7 +14,9 @@ protected:
 public:
     ReadyQueue() {}
 
-    virtual ~ReadyQueue() {}
+    virtual ~ReadyQueue() {
+        clear();
+    }
 
     /**
      * Adds a process to the ready queue
@@ -78,5 +80,48 @@ public:
         while (!processes.empty()) {
             processes.pop();
         }
+    }
+
+    /**
+     * Gets all processes currently in the queue (without removing them)
+     * Useful for debugging, reporting, and testing
+     */
+    virtual std::vector<std::shared_ptr<Process>> getAllProcesses() {
+        std::lock_guard<std::mutex> lock(queueMutex);
+        std::vector<std::shared_ptr<Process>> result;
+        
+        // Create a copy of the queue to iterate without modifying
+        auto tempQueue = processes;
+        while (!tempQueue.empty()) {
+            result.push_back(tempQueue.front());
+            tempQueue.pop();
+        }
+        
+        return result;
+    }
+
+    /**
+     * Checks if a specific process is in the queue
+     * @param process The process to search for
+     * @return true if the process is found, false otherwise
+     */
+    virtual bool contains(std::shared_ptr<Process> process) {
+        if (process == nullptr) {
+            return false;
+        }
+        
+        std::lock_guard<std::mutex> lock(queueMutex);
+        
+        // Create a copy of the queue to iterate without modifying
+        auto tempQueue = processes;
+        while (!tempQueue.empty()) {
+            if (tempQueue.front() == process || 
+                tempQueue.front()->getPID() == process->getPID()) {
+                return true;
+            }
+            tempQueue.pop();
+        }
+        
+        return false;
     }
 };
