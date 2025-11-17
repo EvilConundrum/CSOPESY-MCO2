@@ -4,8 +4,6 @@
 #include <unordered_map>
 #include <iostream>
 #include <sstream>
-#include <thread>
-#include <chrono>
 #include <cstdint>
 #include <functional>
 
@@ -27,7 +25,6 @@ class Instruction {
     std::vector<Instruction> subInstructions;
 
 public:
-    // Constructors
     Instruction() : type(InstructionType::UNKNOWN), lineNumber(0) {}
 
     Instruction(InstructionType type, int lineNumber)
@@ -58,20 +55,13 @@ public:
     bool isValid() const { return type != InstructionType::UNKNOWN; }
 
     /**
-     * Executes the instruction using the provided variable map.
-     * Returns number of CPU ticks consumed (0 for instant, >0 for sleep).
+     * Executes the instruction.
+     * Returns number of CPU ticks consumed:
+     * - 0 for instant instructions
+     * - N for SLEEP
      */
-    int execute(std::unordered_map<std::string, uint16_t> &variables) const {
-        return execute(variables, nullptr, false);
-    }
-
-    /**
-     * Executes the instruction with optional logging callback.
-     * Returns number of CPU ticks consumed (0 for instant, >0 for sleep).
-     * @param printToConsole - if true, prints to console; if false, only logs silently
-     */
-    int execute(std::unordered_map<std::string, uint16_t> &variables, 
-                std::function<void(const std::string&)> logCallback,
+    int execute(std::unordered_map<std::string, uint16_t> &variables,
+                std::function<void(const std::string&)> logCallback = nullptr,
                 bool printToConsole = true) const {
         switch (type) {
             case InstructionType::PRINT:
@@ -92,21 +82,20 @@ public:
                 executeFor(variables, logCallback, printToConsole);
                 return 0;
             default:
-                std::string errMsg = "[ERROR] Unknown instruction: " + command;
-                if (printToConsole) std::cerr << errMsg << std::endl;
-                if (logCallback) logCallback(errMsg);
-                return 0;
+                {
+                    std::string errMsg = "[ERROR] Unknown instruction: " + command;
+                    if (printToConsole) std::cerr << errMsg << std::endl;
+                    if (logCallback) logCallback(errMsg);
+                    return 0;
+                }
         }
     }
 
 private:
-    // Helper for reading variables or constants
     uint16_t getValue(const std::unordered_map<std::string, uint16_t> &vars,
                       const std::string &token) const {
-        if (vars.find(token) != vars.end()) {
-            return vars.at(token);
-        }
-
+        auto it = vars.find(token);
+        if (it != vars.end()) return it->second;
         try {
             int val = std::stoi(token);
             if (val < 0) val = 0;
@@ -117,164 +106,137 @@ private:
         }
     }
 
-    // Print
     void executePrint(const std::unordered_map<std::string, uint16_t> &vars,
-                     std::function<void(const std::string&)> logCallback = nullptr,
-                     bool printToConsole = true) const {
-        if (args.empty()) {
-            std::string msg = "[PRINT] (no message)";
-            if (printToConsole) std::cout << msg << "\n";
-            if (logCallback) logCallback(msg);
-            return;
-        }
-
+                      std::function<void(const std::string&)> logCallback,
+                      bool printToConsole) const {
         std::ostringstream msg;
-        for (size_t i = 0; i < args.size(); ++i) {
-            std::string token = args[i];
+        for (const auto &token : args) {
             if (token == "+") continue;
-
-            if (vars.find(token) != vars.end()) {
-                msg << vars.at(token);
+            auto it = vars.find(token);
+            if (it != vars.end()) {
+                msg << it->second;
             } else {
-                if (token.size() >= 2 && token.front() == '"' && token.back() == '"')
-                    token = token.substr(1, token.size() - 2);
-                msg << token;
+                std::string out = token;
+                if (out.size() >= 2 && out.front() == '"' && out.back() == '"')
+                    out = out.substr(1, out.size() - 2);
+                msg << out;
             }
         }
-
         std::string output = "[PRINT] " + msg.str();
         if (printToConsole) std::cout << output << std::endl;
         if (logCallback) logCallback(output);
     }
 
-    // Declare
     void executeDeclare(std::unordered_map<std::string, uint16_t> &vars,
-                       std::function<void(const std::string&)> logCallback = nullptr,
-                       bool printToConsole = true) const {
+                        std::function<void(const std::string&)> logCallback,
+                        bool printToConsole) const {
         if (args.size() < 2) {
             std::string errMsg = "[ERROR] DECLARE requires 2 arguments (var, value)";
-            if (printToConsole) std::cerr << errMsg << "\n";
+            if (printToConsole) std::cerr << errMsg << std::endl;
             if (logCallback) logCallback(errMsg);
             return;
         }
-
         std::string var = args[0];
         uint16_t value = getValue(vars, args[1]);
         vars[var] = value;
-
-        std::ostringstream oss;
-        oss << "[DECLARE] " << var << " = " << value;
-        std::string output = oss.str();
+        std::string output = "[DECLARE] " + var + " = " + std::to_string(value);
         if (printToConsole) std::cout << output << std::endl;
         if (logCallback) logCallback(output);
     }
 
-    // Add
     void executeAdd(std::unordered_map<std::string, uint16_t> &vars,
-                   std::function<void(const std::string&)> logCallback = nullptr,
-                   bool printToConsole = true) const {
+                    std::function<void(const std::string&)> logCallback,
+                    bool printToConsole) const {
         if (args.size() < 3) {
-            std::string errMsg = "[ERROR] ADD requires 3 arguments (var1, var2/value, var3/value)";
-            if (printToConsole) std::cerr << errMsg << "\n";
+            std::string errMsg = "[ERROR] ADD requires 3 arguments";
+            if (printToConsole) std::cerr << errMsg << std::endl;
             if (logCallback) logCallback(errMsg);
             return;
         }
-
         std::string dest = args[0];
         uint16_t a = getValue(vars, args[1]);
         uint16_t b = getValue(vars, args[2]);
         uint32_t result = a + b;
-
-        // use 32-bit to detect overflow
         if (result > 65535) result = 65535;
         vars[dest] = static_cast<uint16_t>(result);
-
-        std::ostringstream oss;
-        oss << "[ADD] " << dest << " = " << a << " + " << b << " = " << result;
-        std::string output = oss.str();
+        std::string output = "[ADD] " + dest + " = " + std::to_string(a) + " + " + std::to_string(b) + " = " + std::to_string(result);
         if (printToConsole) std::cout << output << std::endl;
         if (logCallback) logCallback(output);
     }
 
-    // Subtract
     void executeSubtract(std::unordered_map<std::string, uint16_t> &vars,
-                        std::function<void(const std::string&)> logCallback = nullptr,
-                        bool printToConsole = true) const {
+                         std::function<void(const std::string&)> logCallback,
+                         bool printToConsole) const {
         if (args.size() < 3) {
-            std::string errMsg = "[ERROR] SUBTRACT requires 3 arguments (var1, var2/value, var3/value)";
-            if (printToConsole) std::cerr << errMsg << "\n";
+            std::string errMsg = "[ERROR] SUBTRACT requires 3 arguments";
+            if (printToConsole) std::cerr << errMsg << std::endl;
             if (logCallback) logCallback(errMsg);
             return;
         }
-
         std::string dest = args[0];
         uint16_t a = getValue(vars, args[1]);
         uint16_t b = getValue(vars, args[2]);
         int32_t result = static_cast<int32_t>(a) - static_cast<int32_t>(b);
-
         if (result < 0) result = 0;
         vars[dest] = static_cast<uint16_t>(result);
-
-        std::ostringstream oss;
-        oss << "[SUBTRACT] " << dest << " = " << a << " - " << b << " = " << result;
-        std::string output = oss.str();
+        std::string output = "[SUBTRACT] " + dest + " = " + std::to_string(a) + " - " + std::to_string(b) + " = " + std::to_string(result);
         if (printToConsole) std::cout << output << std::endl;
         if (logCallback) logCallback(output);
     }
 
-    // Sleep
-    int executeSleep(std::function<void(const std::string&)> logCallback = nullptr,
-                    bool printToConsole = true) const {
+    int executeSleep(std::function<void(const std::string&)> logCallback,
+                     bool printToConsole) const {
         if (args.empty()) {
             std::string errMsg = "[ERROR] SLEEP requires 1 argument (ticks)";
-            if (printToConsole) std::cerr << errMsg << "\n";
-            if (logCallback) logCallback(errMsg);
-            return 0;
-        }
-
-        try {
-            int ticks = std::stoi(args[0]);
-            if (ticks < 0) ticks = 0;
-            if (ticks > 255) ticks = 255;
-
-            std::ostringstream oss;
-            oss << "[SLEEP] Sleeping for " << ticks << " ticks";
-            std::string output = oss.str();
-            if (printToConsole) std::cout << output << "\n";
-            if (logCallback) logCallback(output);
-            return ticks; // return sleep duration for CPU to handle
-        } catch (...) {
-            std::ostringstream oss;
-            oss << "[ERROR] Invalid SLEEP argument: " << args[0];
-            std::string errMsg = oss.str();
             if (printToConsole) std::cerr << errMsg << std::endl;
             if (logCallback) logCallback(errMsg);
             return 0;
         }
-    }
-
-    // For
-    void executeFor(std::unordered_map<std::string, uint16_t> &vars,
-                   std::function<void(const std::string&)> logCallback = nullptr,
-                   bool printToConsole = true) const {
-        if (args.empty()) {
-            std::string errMsg = "[ERROR] FOR requires repeat count";
-            if (printToConsole) std::cerr << errMsg << "\n";
+        int ticks = 0;
+        try {
+            ticks = std::stoi(args[0]);
+        } catch (...) {
+            std::string errMsg = "[ERROR] Invalid SLEEP argument: " + args[0];
+            if (printToConsole) std::cerr << errMsg << std::endl;
             if (logCallback) logCallback(errMsg);
-            return;
+            return 0;
         }
 
-        uint16_t repeatCount = getValue(vars, args.back());
-        std::ostringstream oss;
-        oss << "[FOR] Repeating " << repeatCount << " times";
-        std::string output = oss.str();
-        if (printToConsole) std::cout << output << "\n";
+        if (ticks < 0) ticks = 0;
+        if (ticks > 255) ticks = 255;
+
+        std::string output = "[SLEEP] Sleeping for " + std::to_string(ticks) + " ticks";
+        if (printToConsole) std::cout << output << std::endl;
         if (logCallback) logCallback(output);
 
+        return ticks;
+    }
+
+    int executeFor(std::unordered_map<std::string, uint16_t> &vars,
+                   std::function<void(const std::string&)> logCallback,
+                   bool printToConsole) const {
+        if (args.empty()) {
+            std::string errMsg = "[ERROR] FOR requires repeat count";
+            if (printToConsole) std::cerr << errMsg << std::endl;
+            if (logCallback) logCallback(errMsg);
+            return 0;
+        }
+
+        // Use the last argument as repeat count
+        uint16_t repeatCount = getValue(vars, args.back());
+
+        std::string header = "[FOR] Repeating " + std::to_string(repeatCount) + " times";
+        if (printToConsole) std::cout << header << std::endl;
+        if (logCallback) logCallback(header);
+
+        // Execute subinstructions repeatCount times
         for (uint16_t i = 0; i < repeatCount; ++i) {
             for (const auto &instr : subInstructions) {
                 instr.execute(vars, logCallback, printToConsole);
             }
         }
-    }
+
+        // FOR itself is considered instant (0 ticks) for unit tests
+        return 0;
+    }    
 };
