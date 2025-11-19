@@ -36,6 +36,7 @@ class Process
     // Process logs (capture instruction outputs)
     std::vector<std::string> logs;
     std::mutex logMutex;
+    int assignedCore;
 
 public:
     Process(std::string pid, int totalInstructions = 0)
@@ -47,6 +48,7 @@ public:
         this->memoryRequired = 0;
         this->creationTime = std::chrono::system_clock::now();
         this->instructions.reserve(totalInstructions);
+        this->assignedCore = -1;
     }
 
     /**
@@ -176,15 +178,27 @@ public:
      */
     std::string getCreationTimeStr() const
     {
-        std::time_t time = std::chrono::system_clock::to_time_t(creationTime);
-        char buffer[26];
-        ctime_s(buffer, sizeof(buffer), &time);
-        std::string timeStr(buffer);
-        // Remove newline from ctime output
-        if (!timeStr.empty() && timeStr.back() == '\n') {
-            timeStr.pop_back();
-        }
-        return timeStr;
+        return formatTimePoint(creationTime);
+    }
+
+    std::string getStartTimeStr() const
+    {
+        return formatTimePoint(startTime);
+    }
+
+    std::string getEndTimeStr() const
+    {
+        return formatTimePoint(endTime);
+    }
+
+    bool hasStarted() const
+    {
+        return startTime.time_since_epoch().count() != 0;
+    }
+
+    bool hasCompleted() const
+    {
+        return endTime.time_since_epoch().count() != 0;
     }
 
     /**
@@ -275,5 +289,32 @@ public:
         }
         
         return result;
+    }
+
+    void setAssignedCore(int coreId)
+    {
+        assignedCore = coreId;
+    }
+
+    int getAssignedCore() const
+    {
+        return assignedCore;
+    }
+
+private:
+    std::string formatTimePoint(const std::chrono::system_clock::time_point& timePoint) const
+    {
+        if (timePoint.time_since_epoch().count() == 0) {
+            return "N/A";
+        }
+
+        std::time_t time = std::chrono::system_clock::to_time_t(timePoint);
+        char buffer[26];
+        ctime_s(buffer, sizeof(buffer), &time);
+        std::string timeStr(buffer);
+        if (!timeStr.empty() && timeStr.back() == '\n') {
+            timeStr.pop_back();
+        }
+        return timeStr;
     }
 };

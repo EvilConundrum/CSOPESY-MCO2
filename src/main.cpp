@@ -213,6 +213,9 @@ public:
             this->cli.displayMessage("");
             std::vector<std::string> userInput = splitString(this->cli.getUserInput("C:\\GreggyOS"), ' ');
             commandHandler.parseCommand(userInput, isRunning, isInitialized, opcode, screenMode);
+            
+            if (userInput.empty())
+                continue;
 
             switch (opcode)
             {
@@ -242,9 +245,11 @@ public:
                 break;
             
             case REPORT_UTIL:
-                if (reportHandler != nullptr)
+                if (screenHandler != nullptr)
                 {
-                    reportHandler->generateUtilizationReport();
+                    if (!screenHandler->writeScreenReport()) {
+                        cli.displayMessage("Failed to generate utilization report.");
+                    }
                 }
                 else
                 {
@@ -272,7 +277,10 @@ public:
                     }
 
                     screenName = userInput[2];
-                    screenHandler->createScreen(screenName);
+                    if (screenHandler->createScreen(screenName))
+                    {
+                        this->cli.displayMessage("Process created. Use 'screen -r " + screenName + "' to attach.");
+                    }
                     break;
                     
                 case 2: // view specific screen (interactive mode)
@@ -288,26 +296,7 @@ public:
 
                 case 3: // list screens
                     {
-                        auto allProcesses = screenHandler->getAllProcesses();
-                        if (allProcesses.empty()) {
-                            this->cli.displayMessage("No processes found.");
-                        } else {
-                            std::cout << "\n--- Active Process Screens ---\n";
-                            for (const auto& proc : allProcesses) {
-                                std::string state;
-                                switch(proc->getState()) {
-                                    case ProcessState::READY: state = "Ready"; break;
-                                    case ProcessState::RUNNING: state = "Running"; break;
-                                    case ProcessState::WAITING: state = "Waiting"; break;
-                                    case ProcessState::FINISHED: state = "Finished"; break;
-                                }
-                                std::cout << "  " << proc->getPID() 
-                                         << " - Line " << proc->getCurrentLine() 
-                                         << "/" << proc->getTotalInstructions()
-                                         << " - " << state << "\n";
-                            }
-                            std::cout << "------------------------------\n";
-                        }
+                        screenHandler->displayScreenList();
                     }
                     break;
                 }
