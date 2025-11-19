@@ -156,6 +156,10 @@ public:
         {
             auto newProcess = processGenerator->generateProcess(*config);
             scheduler->addProcess(newProcess);
+            if (screenHandler)
+            {
+                screenHandler->registerProcess(newProcess);
+            }
             lastBatchTick = currentTick;
 
             // Optional: Log process generation (disabled to avoid console spam)

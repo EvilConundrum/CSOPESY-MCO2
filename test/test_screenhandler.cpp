@@ -44,6 +44,16 @@ TEST(test_screen_summary_contains_process)
     ASSERT_NE(summary.find("screen-alpha"), std::string::npos);
 }
 
+TEST(test_register_external_process_visible)
+{
+    ScreenTestContext ctx;
+    auto external = ctx.generator->generateProcess(*ctx.config);
+    ASSERT_TRUE(ctx.handler->registerProcess(external));
+
+    const std::string summary = ctx.handler->generateScreenReport(false);
+    ASSERT_NE(summary.find(external->getPID()), std::string::npos);
+}
+
 TEST(test_screen_report_file_contains_process)
 {
     ScreenTestContext ctx;
@@ -66,6 +76,7 @@ int main()
     std::cout << "Running ScreenHandler tests...\n";
     RUN_TEST(test_screen_create_registers_process);
     RUN_TEST(test_screen_summary_contains_process);
+    RUN_TEST(test_register_external_process_visible);
     RUN_TEST(test_screen_report_file_contains_process);
     std::cout << "All ScreenHandler tests passed.\n";
     return 0;

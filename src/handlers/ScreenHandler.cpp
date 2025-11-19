@@ -105,6 +105,34 @@ public:
     }
 
     /**
+     * Registers an existing process so it shows up in screen listings.
+     * Used by scheduler-generated processes.
+     */
+    bool registerProcess(const std::shared_ptr<Process>& process, const std::string& alias = "") {
+        if (!process) {
+            return false;
+        }
+
+        std::string key = alias.empty() ? process->getPID() : alias;
+        if (key.empty()) {
+            return false;
+        }
+
+        std::lock_guard<std::mutex> lock(processesMutex);
+        cleanupFinishedProcessesLocked();
+
+        auto it = processes.find(key);
+        if (it == processes.end()) {
+            processes[key] = process;
+            return true;
+        }
+
+        // Update pointer if re-registering the same key.
+        it->second = process;
+        return true;
+    }
+
+    /**
      * Enters interactive process screen mode (screen -r <name>)
      * Allows commands: process-smi, exit
      */
