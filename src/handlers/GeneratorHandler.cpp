@@ -142,8 +142,7 @@ public:
                 }
 
                 default:
-                    instr = Instruction("PRINT", {"\"Unhandled instruction type\""});
-                    break;
+                    instr = Instruction("PRINT", {"\"Unhandled instruction type\" " + processName + " " + std::to_string(i)}); 
             }
 
             process->addInstruction(instr);

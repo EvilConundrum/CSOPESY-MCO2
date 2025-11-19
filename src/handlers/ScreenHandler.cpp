@@ -8,15 +8,47 @@
 #include <memory>
 #include <mutex>
 #include <iostream>
+#include <vector>
+#include <fstream>
+#include <sstream>
+#include <iomanip>
+#include <algorithm>
+#include <unordered_set>
+#include <cstdlib>
+#include <chrono>
+#include <ctime>
 
 class ScreenHandler {
 private:
     std::map<std::string, std::shared_ptr<Process>> processes;
+    std::vector<std::shared_ptr<Process>> finishedProcesses;
+    std::unordered_set<const Process*> archivedProcessPointers;
     std::mutex processesMutex;
     Config* config;
     GeneratorHandler* generator;
     ScheduleHandler* scheduleHandler;
     ReportHandler* reportHandler;
+
+    static constexpr size_t MAX_FINISHED_HISTORY = 50;
+
+    struct ProcessDisplayInfo {
+        std::string pid;
+        ProcessState state;
+        int currentLine;
+        int totalInstructions;
+        std::string currentInstruction;
+        std::string timestamp;
+        std::string finishedTimestamp;
+        int assignedCore;
+    };
+
+    struct ScreenSummary {
+        double cpuUtilization = 0.0;
+        int coresUsed = 0;
+        int coresAvailable = 0;
+        std::vector<ProcessDisplayInfo> activeProcesses;
+        std::vector<ProcessDisplayInfo> finishedProcessHistory;
+    };
 
 public:
     ScreenHandler(Config* configPtr, 
@@ -33,82 +65,42 @@ public:
      * Now uses GeneratorHandler to create the process!
      */
     bool createScreen(const std::string& processName) {
-        std::lock_guard<std::mutex> lock(processesMutex);
-        
-        // Check if process already exists
-        if (processes.find(processName) != processes.end()) {
-            std::cout << "Process " << processName << " already exists.\n";
+        if (processName.empty()) {
+            std::cout << "Process name cannot be empty.\n";
             return false;
         }
 
-        // Use GeneratorHandler with custom name
+        if (generator == nullptr || config == nullptr) {
+            std::cout << "Screen subsystem not initialized.\n";
+            return false;
+        }
+
+        {
+            std::lock_guard<std::mutex> lock(processesMutex);
+            cleanupFinishedProcessesLocked();
+            if (processes.find(processName) != processes.end()) {
+                std::cout << "Process " << processName << " already exists.\n";
+                return false;
+            }
+        }
+
         auto process = generator->generateProcessWithName(*config, processName);
-        
-        // Store in registry (PID already equals processName)
-        processes[processName] = process;
-        
-        // ADD TO SCHEDULER (Critical!)
+
+        {
+            std::lock_guard<std::mutex> lock(processesMutex);
+            processes[processName] = process;
+        }
+
         if (scheduleHandler) {
             scheduleHandler->addProcess(process);
         }
-        
-        // NOTIFY REPORT HANDLER (Important!)
+
         if (reportHandler) {
             reportHandler->recordProcessStart(process);
         }
-        
-        std::cout << "Process " << processName << " created with " 
+
+        std::cout << "Process " << processName << " created with "
                   << process->getTotalInstructions() << " instructions.\n";
-        return true;
-    }
-
-    /**
-     * Displays a specific process screen (screen -r <name>)
-     */
-    bool displayScreen(const std::string& processName) {
-        std::lock_guard<std::mutex> lock(processesMutex);
-        
-        auto it = processes.find(processName);
-        if (it == processes.end()) {
-            std::cout << "Process " << processName << " not found.\n";
-            return false;
-        }
-
-        auto process = it->second;
-        
-        std::cout << "\n===================================\n";
-        std::cout << "Process: " << process->getPID() << "\n";
-        std::cout << "Current Instruction Line: " << process->getCurrentLine() << "\n";
-        std::cout << "Total Instructions: " << process->getTotalInstructions() << "\n";
-        
-        std::string state;
-        switch(process->getState()) {
-            case ProcessState::READY: state = "Ready"; break;
-            case ProcessState::RUNNING: state = "Running"; break;
-            case ProcessState::WAITING: state = "Waiting"; break;
-            case ProcessState::FINISHED: state = "Finished"; break;
-        }
-        std::cout << "State: " << state << "\n";
-        
-        // Show current instruction
-        std::cout << "\nCurrent instruction: " << process->getCurrentInstructionStr() << "\n";
-        
-        std::cout << "===================================\n";
-        
-        // Display process logs
-        auto logs = process->getLogs();
-        if (!logs.empty()) {
-            std::cout << "\n--- Process Logs ---\n";
-            for (const auto& log : logs) {
-                std::cout << log << "\n";
-            }
-            std::cout << "--- End of Logs ---\n";
-        } else {
-            std::cout << "\n(No logs yet)\n";
-        }
-        
-        std::cout << "\n";
-        
         return true;
     }
 
@@ -116,11 +108,15 @@ public:
      * Enters interactive process screen mode (screen -r <name>)
      * Allows commands: process-smi, exit
      */
-    void enterInteractiveScreen(const std::string& processName) {
+    bool enterInteractiveScreen(const std::string& processName, bool clearFirst = true) {
         auto process = getProcess(processName);
         if (!process) {
             std::cout << "Process " << processName << " not found.\n";
-            return;
+            return false;
+        }
+
+        if (clearFirst) {
+            clearConsole();
         }
 
         std::cout << "\n=========================================\n";
@@ -128,20 +124,21 @@ public:
         std::cout << "Commands: process-smi, exit\n";
         std::cout << "=========================================\n\n";
 
-        // Initial display
         displayProcessInfo(process);
 
-        // Interactive loop
         while (true) {
             std::cout << "root@" << processName << ":~$ ";
             std::string input;
-            std::getline(std::cin, input);
+            if (!std::getline(std::cin, input)) {
+                break;
+            }
 
-            // Trim whitespace
             size_t start = input.find_first_not_of(" \t");
             size_t end = input.find_last_not_of(" \t");
             if (start != std::string::npos && end != std::string::npos) {
                 input = input.substr(start, end - start + 1);
+            } else {
+                input.clear();
             }
 
             if (input.empty()) {
@@ -151,16 +148,52 @@ public:
             if (input == "exit") {
                 std::cout << "\nExiting process screen...\n";
                 break;
-            }
-            else if (input == "process-smi") {
+            } else if (input == "process-smi") {
                 std::cout << "\n";
                 displayProcessInfo(process);
-            }
-            else {
+            } else {
                 std::cout << "Unknown command: " << input << "\n";
                 std::cout << "Available commands: process-smi, exit\n";
             }
         }
+
+        archiveProcessIfFinished(processName, process);
+        return true;
+    }
+
+    /**
+     * Renders the equivalent of `screen -ls` directly to the console.
+     */
+    void displayScreenList() {
+        auto summary = buildScreenSummary();
+        std::cout << renderScreenSummary(summary, false);
+    }
+
+    /**
+     * Writes the current utilization summary to a file (report-util).
+     */
+    bool writeScreenReport(const std::string& filename = "csopesy-log.txt") {
+        auto summary = buildScreenSummary();
+        auto content = renderScreenSummary(summary, true);
+
+        std::ofstream file(filename);
+        if (!file.is_open()) {
+            std::cerr << "Unable to open report file: " << filename << "\n";
+            return false;
+        }
+
+        file << content;
+        file.close();
+        std::cout << "Report saved to " << filename << "\n";
+        return true;
+    }
+
+    /**
+     * Provides the formatted screen summary (used for testing/logging).
+     */
+    std::string generateScreenReport(bool includeTimestamp = false) {
+        auto summary = buildScreenSummary();
+        return renderScreenSummary(summary, includeTimestamp);
     }
 
 private:
@@ -169,31 +202,35 @@ private:
      */
     void displayProcessInfo(std::shared_ptr<Process> process) {
         std::cout << "===================================\n";
-        std::cout << "Process: " << process->getPID() << "\n";
-        std::cout << "Current Instruction Line: " << process->getCurrentLine() << " / " 
-                  << process->getTotalInstructions() << "\n";
-        
-        std::string state;
-        switch(process->getState()) {
-            case ProcessState::READY: state = "Ready"; break;
-            case ProcessState::RUNNING: state = "Running"; break;
-            case ProcessState::WAITING: state = "Waiting"; break;
-            case ProcessState::FINISHED: state = "Finished"; break;
+        std::cout << "Process: " << process->getPID();
+        if (process->isFinished()) {
+            std::cout << " (Finished!)";
         }
-        std::cout << "State: " << state << "\n";
-        
-        // Show current instruction being executed
+        std::cout << "\n";
+
+        std::cout << "State: " << formatState(process->getState()) << "\n";
+        std::cout << "Instruction Line: " << process->getCurrentLine()
+                  << " / " << process->getTotalInstructions() << "\n";
+
+        int core = process->getAssignedCore();
+        std::cout << "Core: " << (core >= 0 ? std::to_string(core) : std::string("idle")) << "\n";
+
+        if (process->hasStarted()) {
+            std::cout << "Started: " << process->getStartTimeStr() << "\n";
+        }
+        if (process->isFinished()) {
+            std::cout << "Finished: " << process->getEndTimeStr() << "\n";
+        }
+
         std::cout << "\nCurrent instruction: " << process->getCurrentInstructionStr() << "\n";
-        
         std::cout << "===================================\n";
-        
-        // Display recent logs (last 20 entries)
+
         auto logs = process->getLogs();
         if (!logs.empty()) {
-            std::cout << "\n--- Process Output (last " 
-                      << std::min(static_cast<size_t>(20), logs.size()) 
+            std::cout << "\n--- Process Output (last "
+                      << std::min(static_cast<size_t>(20), logs.size())
                       << " entries) ---\n";
-            
+
             size_t startIdx = logs.size() > 20 ? logs.size() - 20 : 0;
             for (size_t i = startIdx; i < logs.size(); ++i) {
                 std::cout << logs[i] << "\n";
@@ -202,8 +239,198 @@ private:
         } else {
             std::cout << "\n(No output yet)\n";
         }
-        
+
+        if (process->isFinished()) {
+            std::cout << "Finished!\n";
+        }
+
         std::cout << "\n";
+    }
+
+    void clearConsole() const {
+#ifdef _WIN32
+        std::system("cls");
+#else
+        std::system("clear");
+#endif
+    }
+
+    void cleanupFinishedProcessesLocked() {
+        std::vector<std::string> toArchive;
+        for (const auto& entry : processes) {
+            if (entry.second && entry.second->isFinished()) {
+                toArchive.push_back(entry.first);
+            }
+        }
+
+        for (const auto& name : toArchive) {
+            auto it = processes.find(name);
+            if (it != processes.end()) {
+                archiveProcessLocked(name, it->second);
+            }
+        }
+    }
+
+    void archiveProcessLocked(const std::string& processName, const std::shared_ptr<Process>& process) {
+        if (!process || !process->isFinished()) {
+            return;
+        }
+
+        bool inserted = archivedProcessPointers.insert(process.get()).second;
+        if (inserted) {
+            finishedProcesses.push_back(process);
+            if (finishedProcesses.size() > MAX_FINISHED_HISTORY) {
+                auto dropped = finishedProcesses.front();
+                archivedProcessPointers.erase(dropped.get());
+                finishedProcesses.erase(finishedProcesses.begin());
+            }
+
+            if (reportHandler) {
+                reportHandler->recordProcessCompletion(process);
+            }
+        }
+
+        processes.erase(processName);
+    }
+
+    void archiveProcessIfFinished(const std::string& processName, const std::shared_ptr<Process>& process) {
+        if (!process || !process->isFinished()) {
+            return;
+        }
+
+        std::lock_guard<std::mutex> lock(processesMutex);
+        archiveProcessLocked(processName, process);
+    }
+
+    ProcessDisplayInfo buildDisplayInfo(const std::shared_ptr<Process>& process) const {
+        ProcessDisplayInfo info{};
+        if (!process) {
+            return info;
+        }
+
+        info.pid = process->getPID();
+        info.state = process->getState();
+        info.currentLine = process->getCurrentLine();
+        info.totalInstructions = process->getTotalInstructions();
+        info.currentInstruction = process->getCurrentInstructionStr();
+        info.timestamp = process->hasStarted() ? process->getStartTimeStr() : process->getCreationTimeStr();
+        info.finishedTimestamp = process->isFinished() ? process->getEndTimeStr() : "";
+        info.assignedCore = process->getAssignedCore();
+        return info;
+    }
+
+    ScreenSummary buildScreenSummary() {
+        ScreenSummary summary;
+        std::lock_guard<std::mutex> lock(processesMutex);
+        cleanupFinishedProcessesLocked();
+
+        for (const auto& entry : processes) {
+            if (entry.second) {
+                summary.activeProcesses.push_back(buildDisplayInfo(entry.second));
+            }
+        }
+
+        for (const auto& proc : finishedProcesses) {
+            if (proc) {
+                summary.finishedProcessHistory.push_back(buildDisplayInfo(proc));
+            }
+        }
+
+        std::sort(summary.activeProcesses.begin(), summary.activeProcesses.end(),
+                  [](const ProcessDisplayInfo& lhs, const ProcessDisplayInfo& rhs) {
+                      return lhs.pid < rhs.pid;
+                  });
+
+        std::sort(summary.finishedProcessHistory.begin(), summary.finishedProcessHistory.end(),
+                  [](const ProcessDisplayInfo& lhs, const ProcessDisplayInfo& rhs) {
+                      return lhs.finishedTimestamp > rhs.finishedTimestamp;
+                  });
+
+        int totalCores = config ? config->getNumCpus() : 1;
+        int runningCount = 0;
+        for (const auto& info : summary.activeProcesses) {
+            if (info.state == ProcessState::RUNNING) {
+                runningCount++;
+            }
+        }
+
+        summary.coresUsed = std::min(runningCount, totalCores);
+        summary.coresAvailable = std::max(0, totalCores - summary.coresUsed);
+        summary.cpuUtilization = totalCores > 0
+            ? (static_cast<double>(summary.coresUsed) / static_cast<double>(totalCores)) * 100.0
+            : 0.0;
+
+        return summary;
+    }
+
+    std::string renderScreenSummary(const ScreenSummary& summary, bool includeTimestamp) const {
+        std::ostringstream out;
+        out << "\n========== Screen Sessions ==========" << "\n";
+
+        if (includeTimestamp) {
+            auto now = std::chrono::system_clock::now();
+            std::time_t time = std::chrono::system_clock::to_time_t(now);
+            char buffer[100];
+            std::tm timeInfo{};
+#ifdef _WIN32
+            localtime_s(&timeInfo, &time);
+#else
+            std::tm* tmp = std::localtime(&time);
+            if (tmp != nullptr) {
+                timeInfo = *tmp;
+            }
+#endif
+            std::strftime(buffer, sizeof(buffer), "%m/%d/%Y %I:%M:%S %p", &timeInfo);
+            out << "Generated on: " << buffer << "\n";
+        }
+
+        out << std::fixed << std::setprecision(2);
+        out << "CPU utilization: " << summary.cpuUtilization << "%\n";
+        out << "Cores used: " << summary.coresUsed << "\n";
+        out << "Cores available: " << summary.coresAvailable << "\n";
+        out << "----------------------------------------------\n";
+
+        out << "Running processes:\n";
+        if (summary.activeProcesses.empty()) {
+            out << "  No running processes.\n";
+        } else {
+            for (const auto& info : summary.activeProcesses) {
+                out << "  " << info.pid << " | " << formatState(info.state)
+                    << " | Core: " << (info.assignedCore >= 0 ? std::to_string(info.assignedCore) : std::string("idle"))
+                    << " | Started: " << info.timestamp << "\n";
+                out << "    Instruction " << info.currentLine << "/" << info.totalInstructions
+                    << " -> " << info.currentInstruction << "\n";
+            }
+        }
+
+        out << "\nFinished processes:\n";
+        if (summary.finishedProcessHistory.empty()) {
+            out << "  No finished processes.\n";
+        } else {
+            for (const auto& info : summary.finishedProcessHistory) {
+                out << "  " << info.pid
+                    << " | Finished: " << (info.finishedTimestamp.empty() ? "N/A" : info.finishedTimestamp)
+                    << " | Last line " << info.currentLine << "/" << info.totalInstructions << "\n";
+            }
+        }
+
+        out << "----------------------------------------------\n";
+        return out.str();
+    }
+
+    std::string formatState(ProcessState state) const {
+        switch (state) {
+            case ProcessState::READY:
+                return "Ready";
+            case ProcessState::RUNNING:
+                return "Running";
+            case ProcessState::WAITING:
+                return "Waiting";
+            case ProcessState::FINISHED:
+                return "Finished";
+            default:
+                return "Unknown";
+        }
     }
 
 public:
@@ -213,6 +440,7 @@ public:
      */
     std::shared_ptr<Process> getProcess(const std::string& processName) {
         std::lock_guard<std::mutex> lock(processesMutex);
+        cleanupFinishedProcessesLocked();
         auto it = processes.find(processName);
         return (it != processes.end()) ? it->second : nullptr;
     }
@@ -222,9 +450,13 @@ public:
      */
     std::vector<std::shared_ptr<Process>> getAllProcesses() {
         std::lock_guard<std::mutex> lock(processesMutex);
+        cleanupFinishedProcessesLocked();
         std::vector<std::shared_ptr<Process>> result;
         for (const auto& pair : processes) {
             result.push_back(pair.second);
+        }
+        for (const auto& finished : finishedProcesses) {
+            result.push_back(finished);
         }
         return result;
     }
@@ -234,6 +466,7 @@ public:
      */
     bool processExists(const std::string& processName) {
         std::lock_guard<std::mutex> lock(processesMutex);
+        cleanupFinishedProcessesLocked();
         return processes.find(processName) != processes.end();
     }
 
@@ -242,6 +475,7 @@ public:
      */
     size_t getProcessCount() {
         std::lock_guard<std::mutex> lock(processesMutex);
+        cleanupFinishedProcessesLocked();
         return processes.size();
     }
 

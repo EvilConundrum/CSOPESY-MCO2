@@ -31,6 +31,9 @@ public:
     void addProcess(std::shared_ptr<Process> process)
     {
         this->currProcess = process;
+        if (this->currProcess != nullptr) {
+            this->currProcess->setAssignedCore(this->coreID);
+        }
     }
 
     /**
@@ -61,6 +64,9 @@ public:
                     // Time quantum expired - need to requeue process
                     this->timeLeft = this->timeQuantum;
                     this->currProcess->setState(ProcessState::READY);
+                    if (this->currProcess != nullptr) {
+                        this->currProcess->setAssignedCore(-1);
+                    }
                     
                     // Return process for re-queueing
                     auto processToRequeue = this->currProcess;
@@ -77,6 +83,7 @@ public:
             if (this->currProcess != nullptr && this->currProcess->isFinished())
             {
                 this->currProcess->setState(ProcessState::FINISHED);
+                this->currProcess->setAssignedCore(-1);
                 std::string logMsg =    "Process " 
                                         + this->currProcess->getPID() 
                                         + " finished on core " 
@@ -115,6 +122,7 @@ public:
             if (this->currProcess->isFinished())
             {
                 this->currProcess->setState(ProcessState::FINISHED);
+                this->currProcess->setAssignedCore(-1);
                 std::string logMsg =    "Process " 
                                         + this->currProcess->getPID() 
                                         + " finished on core " 
@@ -167,6 +175,9 @@ public:
         auto process = this->currProcess;
         if (this->currProcess != nullptr) {
             this->currProcess = nullptr;
+        }
+        if (process != nullptr) {
+            process->setAssignedCore(-1);
         }
         this->timeLeft = this->timeQuantum;
         return process;
