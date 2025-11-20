@@ -97,6 +97,9 @@ public:
                 }
             }
         }
+        
+        // sleep for 100 ms to simulate time between cycles
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
     }
 
     /**
