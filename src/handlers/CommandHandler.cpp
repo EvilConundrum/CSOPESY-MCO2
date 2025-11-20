@@ -7,7 +7,8 @@
 
 enum Commands
 {
-    UNKNOWN = -2,
+    EMPTY = -3,
+    UNKNOWN,
     UNINITIALIZED,
     INITIALIZE,
     EXIT,
@@ -25,6 +26,12 @@ public:
 
     void parseCommand(std::vector<std::string> args, std::atomic<bool> &isRunning, std::atomic<bool> &isInitialized, std::atomic<Commands> &opcode, std::atomic<int> &screenMode)
     {
+        if (args.empty())
+        {
+            opcode = EMPTY;
+            return;
+        }
+
         const std::string &command = args[0];
 
         Commands cmdEnum = this->getCommandEnum(command);
@@ -82,9 +89,9 @@ private:
      */
     Commands getCommandEnum(const std::string &command)
     {
-        if (command == "initialize" or command == "init")
+        if (command == "initialize" || command == "init")
             return INITIALIZE;
-        else if (command == "exit" or command == "quit")
+        else if (command == "exit" || command == "quit")
             return EXIT;
         else if (command == "screen")
             return SCREEN;
