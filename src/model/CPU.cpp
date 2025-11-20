@@ -40,6 +40,13 @@ public:
      */
     std::shared_ptr<Process> executeNext()
     {
+        // If process has no instructions, finish immediately
+        if (this->currProcess && !this->currProcess->hasInstructions()) {
+            this->currProcess->setState(ProcessState::FINISHED);
+            this->currProcess = nullptr;
+            return nullptr; // CPU is idle
+        }
+
         if (this->currProcess != nullptr && this->currProcess->hasInstructions())
         {
             // Set process state to running
@@ -49,27 +56,29 @@ public:
 
             // Execute next instruction
             bool executed = this->currProcess->executeNextInstruction();
+
+            if (currProcess->getState() == ProcessState::WAITING) {
+                // Process started sleeping → CPU must stop running it immediately
+                auto sleeping = currProcess;
+                currProcess = nullptr;
+                timeLeft = timeQuantum;
+                return sleeping;  // Scheduler will NOT put it in ready queue
+            }
             
             if (executed) {
                 // Handle round robin time quantum
-                if (this->timeLeft > 0)
-                {
-                    this->timeLeft--;
-                }
-                else if (this->timeQuantum > 0 && this->timeLeft <= 0)
-                {
-                    // Time quantum expired - need to requeue process
-                    this->timeLeft = this->timeQuantum;
-                    this->currProcess->setState(ProcessState::READY);
-                    
-                    // Return process for re-queueing
-                    auto processToRequeue = this->currProcess;
-                    this->currProcess = nullptr;
-                    return processToRequeue;
-                } else if (this->timeQuantum == 0) {
-                    // No time quantum (FCFS), just continue
-                    this->currProcess->setState(ProcessState::READY);
-                    return nullptr;
+                if (executed) {
+                    if (this->timeQuantum > 0 && this->timeLeft == 1) {
+                        this->timeLeft = this->timeQuantum;
+                        this->currProcess->setState(ProcessState::READY);
+                        auto processToRequeue = this->currProcess;
+                        this->currProcess = nullptr;
+                        return processToRequeue;
+                    }
+
+                    if (this->timeQuantum > 0 && this->timeLeft > 1) {
+                        this->timeLeft--;
+                    }
                 }
             }
 
@@ -96,6 +105,14 @@ public:
      */
     void executeInstruction()
     {
+        if (this->currProcess != nullptr && !this->currProcess->hasInstructions())
+        {
+            this->currProcess->setState(ProcessState::FINISHED);
+            this->currProcess = nullptr;
+            this->timeLeft = this->timeQuantum;
+            return;
+        }
+
         if (this->currProcess != nullptr && this->currProcess->hasInstructions())
         {
             // Set process state to running

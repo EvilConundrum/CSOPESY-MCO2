@@ -79,7 +79,8 @@ public:
         int sleepTime = instructions[currentInstructionLine].execute(variables, logCallback, false);
         
         if (sleepTime > 0) {
-            // Simulate sleep by just returning (actual sleep handled by CPU scheduler)
+            this->sleepTimeRemaining = sleepTime;
+            this->state = ProcessState::WAITING;  
             return true;
         }
 
@@ -275,5 +276,19 @@ public:
         }
         
         return result;
+    }
+
+    bool updateSleep(int timePassed)
+    {
+        if (state != ProcessState::WAITING) return false;
+
+        sleepTimeRemaining -= timePassed;
+
+        if (sleepTimeRemaining <= 0) {
+            sleepTimeRemaining = 0;
+            state = ProcessState::READY;   
+            return true;
+        }
+        return false;
     }
 };

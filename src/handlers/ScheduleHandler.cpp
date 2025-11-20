@@ -11,6 +11,7 @@ class ScheduleHandler
 {
 private:
     std::shared_ptr<ReadyQueue> readyQueue;
+    std::vector<std::shared_ptr<Process>> waitingQueue;
     std::string schedulerType;
     std::atomic<unsigned long long> cpuTicks;
 
@@ -66,6 +67,21 @@ public:
      */
     void executeSchedulingCycle(std::vector<CPU> &cpus)
     {
+        // Update sleep timers
+        for (auto it = waitingQueue.begin(); it != waitingQueue.end(); ) {
+            auto &p = *it;
+
+            p->updateSleep(1);  // decrement 1 tick
+
+            if (p->getState() == ProcessState::READY) {
+                // Move back to ready queue
+                readyQueue->enqueueProcess(p);
+                it = waitingQueue.erase(it);
+            } else {
+                ++it;
+            }
+        }
+
         // Increment CPU tick counter at the start of each cycle
         cpuTicks++;
 
@@ -77,11 +93,11 @@ public:
                 auto processToRequeue = cpu.executeNext();
                 
                 // If process was preempted, requeue it
-                if (processToRequeue != nullptr && !processToRequeue->isFinished())
-                {
-                    if (schedulerType == "rr")
-                    {
-                        // Re-add to ready queue for Round Robin
+                if (processToRequeue != nullptr) {
+                    if (processToRequeue->getState() == ProcessState::WAITING) {
+                        waitingQueue.push_back(processToRequeue);
+                    }
+                    else if (!processToRequeue->isFinished()) {
                         readyQueue->enqueueProcess(processToRequeue);
                     }
                 }
