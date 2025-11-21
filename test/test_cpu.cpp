@@ -243,6 +243,26 @@ TEST(test_process_no_instructions_on_cpu) {
     ASSERT_TRUE(cpu.isIdle());
 }
 
+// Test: Sleeping processes are moved into the waiting queue
+TEST(test_cpu_moves_sleeping_process_to_wait_queue) {
+    CPU cpu(0, 5);
+    WaitingQueue waitQueue;
+    auto p1 = std::make_shared<Process>("P1", 2);
+    p1->addInstruction(Instruction("SLEEP", {"2"}));
+    p1->addInstruction(Instruction("PRINT", {"Done"}));
+
+    cpu.addProcess(p1);
+    cpu.executeNext(&waitQueue);
+
+    ASSERT_TRUE(cpu.isIdle());
+    ASSERT_TRUE(waitQueue.contains(p1));
+
+    auto ready = waitQueue.advanceTicks(2);
+    ASSERT_EQ(ready.size(), 1);
+    ready[0]->wakeFromSleep();
+    ASSERT_EQ(ready[0]->getState(), ProcessState::READY);
+}
+
 int main() {
     std::cout << "=== Running CPU Unit Tests ===\n";
     
@@ -262,6 +282,7 @@ int main() {
         RUN_TEST(test_empty_cpu_execution);
         RUN_TEST(test_multiple_cpus);
         RUN_TEST(test_process_no_instructions_on_cpu);
+        RUN_TEST(test_cpu_moves_sleeping_process_to_wait_queue);
         
         std::cout << "\n=== All CPU tests passed! ===\n";
         return 0;
