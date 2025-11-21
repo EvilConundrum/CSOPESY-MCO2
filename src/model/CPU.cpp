@@ -5,6 +5,7 @@
 #include <mutex>
 #include "readyqueue/ReadyQueue.cpp"
 #include "Process.cpp"
+#include "WaitingQueue.cpp"
 
 class CPU
 {
@@ -41,8 +42,16 @@ public:
      * Returns the process if it needs to be re-queued (time quantum expired)
      * Returns nullptr if process continues or is finished
      */
-    std::shared_ptr<Process> executeNext()
+    std::shared_ptr<Process> executeNext(WaitingQueue* waitingQueue = nullptr)
     {
+        if (this->currProcess != nullptr && !this->currProcess->hasInstructions())
+        {
+            if (this->currProcess->isFinished()) {
+                completeCurrentProcess();
+            }
+            return nullptr;
+        }
+
         if (this->currProcess != nullptr && this->currProcess->hasInstructions())
         {
             // Set process state to running
@@ -52,45 +61,50 @@ public:
 
             // Execute next instruction
             bool executed = this->currProcess->executeNextInstruction();
+
+            if (this->currProcess != nullptr && this->currProcess->isSleeping()) {
+                if (waitingQueue != nullptr) {
+                    waitingQueue->enqueueProcess(this->currProcess);
+                    this->currProcess->setAssignedCore(-1);
+                    this->currProcess = nullptr;
+                    this->timeLeft = this->timeQuantum;
+                } else {
+                    this->currProcess->wakeFromSleep();
+                }
+                return nullptr;
+            }
             
             if (executed) {
-                // Handle round robin time quantum
-                if (this->timeLeft > 0)
+                if (this->timeQuantum > 0)
                 {
-                    this->timeLeft--;
-                }
-                else if (this->timeQuantum > 0 && this->timeLeft <= 0)
-                {
-                    // Time quantum expired - need to requeue process
-                    this->timeLeft = this->timeQuantum;
-                    this->currProcess->setState(ProcessState::READY);
-                    if (this->currProcess != nullptr) {
-                        this->currProcess->setAssignedCore(-1);
+                    if (this->timeLeft > 0)
+                    {
+                        this->timeLeft--;
                     }
-                    
-                    // Return process for re-queueing
-                    auto processToRequeue = this->currProcess;
-                    this->currProcess = nullptr;
-                    return processToRequeue;
-                } else if (this->timeQuantum == 0) {
-                    // No time quantum (FCFS), just continue
+
+                    if (this->timeLeft <= 0)
+                    {
+                        this->timeLeft = this->timeQuantum;
+                        this->currProcess->setState(ProcessState::READY);
+                        if (this->currProcess != nullptr) {
+                            this->currProcess->setAssignedCore(-1);
+                        }
+
+                        auto processToRequeue = this->currProcess;
+                        this->currProcess = nullptr;
+                        return processToRequeue;
+                    }
+                }
+                else
+                {
                     this->currProcess->setState(ProcessState::READY);
-                    return nullptr;
                 }
             }
 
             // Check if process is finished
             if (this->currProcess != nullptr && this->currProcess->isFinished())
             {
-                this->currProcess->setState(ProcessState::FINISHED);
-                this->currProcess->setAssignedCore(-1);
-                std::string logMsg =    "Process " 
-                                        + this->currProcess->getPID() 
-                                        + " finished on core " 
-                                        + std::to_string(this->coreID);
-                this->logs.push_back(logMsg);
-                this->currProcess = nullptr;
-                this->timeLeft = this->timeQuantum;
+                completeCurrentProcess();
             }
         }
         
@@ -101,8 +115,16 @@ public:
      * Executes one instruction without returning preempted process
      * (For simpler execution flow)
      */
-    void executeInstruction()
+    void executeInstruction(WaitingQueue* waitingQueue = nullptr)
     {
+        if (this->currProcess != nullptr && !this->currProcess->hasInstructions())
+        {
+            if (this->currProcess->isFinished()) {
+                completeCurrentProcess();
+            }
+            return;
+        }
+
         if (this->currProcess != nullptr && this->currProcess->hasInstructions())
         {
             // Set process state to running
@@ -112,28 +134,37 @@ public:
 
             // Execute next instruction
             this->currProcess->executeNextInstruction();
+
+            if (this->currProcess != nullptr && this->currProcess->isSleeping()) {
+                if (waitingQueue != nullptr) {
+                    waitingQueue->enqueueProcess(this->currProcess);
+                    this->currProcess->setAssignedCore(-1);
+                    this->currProcess = nullptr;
+                    this->timeLeft = this->timeQuantum;
+                } else {
+                    this->currProcess->wakeFromSleep();
+                }
+                return;
+            }
             
-            // Decrement time quantum
-            if (this->timeLeft > 0) {
-                this->timeLeft--;
+            if (this->timeQuantum > 0)
+            {
+                if (this->timeLeft > 0) {
+                    this->timeLeft--;
+                }
+
+                if (this->timeLeft <= 0) {
+                    this->timeLeft = this->timeQuantum;
+                }
             }
 
             // Check if process is finished
             if (this->currProcess->isFinished())
             {
-                this->currProcess->setState(ProcessState::FINISHED);
-                this->currProcess->setAssignedCore(-1);
-                std::string logMsg =    "Process " 
-                                        + this->currProcess->getPID() 
-                                        + " finished on core " 
-                                        + std::to_string(this->coreID);
-                this->logs.push_back(logMsg);
-                this->currProcess = nullptr;
-                this->timeLeft = this->timeQuantum;
+                completeCurrentProcess();
             }
         }
     }
-
     /**
      * Checks if there are remaining processes to execute
      */
@@ -221,5 +252,23 @@ public:
     void clearLogs()
     {
         this->logs.clear();
+    }
+
+private:
+    void completeCurrentProcess()
+    {
+        if (this->currProcess == nullptr) {
+            return;
+        }
+
+        this->currProcess->setState(ProcessState::FINISHED);
+        this->currProcess->setAssignedCore(-1);
+        std::string logMsg =    "Process " 
+                                + this->currProcess->getPID() 
+                                + " finished on core " 
+                                + std::to_string(this->coreID);
+        this->logs.push_back(logMsg);
+        this->currProcess = nullptr;
+        this->timeLeft = this->timeQuantum;
     }
 };
