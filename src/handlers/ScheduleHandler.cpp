@@ -2,6 +2,7 @@
 #include "../model/CPU.cpp"
 #include "../model/readyqueue/FCFS.cpp"
 #include "../model/readyqueue/RoundRobin.cpp"
+#include "../model/WaitingQueue.cpp"
 #include <vector>
 #include <memory>
 #include <atomic>
@@ -13,12 +14,14 @@ private:
     std::shared_ptr<ReadyQueue> readyQueue;
     std::string schedulerType;
     std::atomic<unsigned long long> cpuTicks;
+    std::shared_ptr<WaitingQueue> waitingQueue;
 
 public:
     ScheduleHandler(const std::string &schedulerType, int timeQuantum = 5)
         : schedulerType(schedulerType)
     {
         this->cpuTicks = 0;
+        this->waitingQueue = std::make_shared<WaitingQueue>();
 
         // Initialize the appropriate scheduler
         if (schedulerType == "fcfs") {
@@ -69,12 +72,14 @@ public:
         // Increment CPU tick counter at the start of each cycle
         cpuTicks++;
 
+        releaseSleepingProcesses();
+
         for (auto &cpu : cpus)
         {
             if (!cpu.isIdle())
             {
                 // Execute next instruction and check if process needs requeuing
-                auto processToRequeue = cpu.executeNext();
+                auto processToRequeue = cpu.executeNext(waitingQueue.get());
                 
                 // If process was preempted, requeue it
                 if (processToRequeue != nullptr && !processToRequeue->isFinished())
@@ -108,6 +113,11 @@ public:
     std::shared_ptr<ReadyQueue> getReadyQueue()
     {
         return readyQueue;
+    }
+
+    std::shared_ptr<WaitingQueue> getWaitingQueue()
+    {
+        return waitingQueue;
     }
 
     /**
@@ -159,5 +169,27 @@ public:
     std::string getCpuTicksString() const
     {
         return "CPU Ticks: " + std::to_string(cpuTicks.load());
+    }
+
+private:
+    void releaseSleepingProcesses()
+    {
+        if (!waitingQueue) {
+            return;
+        }
+
+        auto readyProcesses = waitingQueue->advanceTicks();
+        for (auto& process : readyProcesses)
+        {
+            if (!process) {
+                continue;
+            }
+
+            process->wakeFromSleep();
+
+            if (!process->isFinished()) {
+                readyQueue->enqueueProcess(process);
+            }
+        }
     }
 };
