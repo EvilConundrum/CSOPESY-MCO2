@@ -220,6 +220,29 @@ TEST(test_large_instruction_count) {
     ASSERT_FALSE(p.isFinished());
 }
 
+// Test: Sleep instruction transitions through waiting state
+TEST(test_process_sleep_transitions) {
+    Process p("P1", 2);
+    p.addInstruction(Instruction("SLEEP", {"2"}));
+    p.addInstruction(Instruction("PRINT", {"Done"}));
+
+    ASSERT_EQ(p.getCurrentLine(), 0);
+    p.executeNextInstruction();
+
+    ASSERT_TRUE(p.isSleeping());
+    ASSERT_EQ(p.getState(), ProcessState::WAITING);
+    ASSERT_EQ(p.getSleepTimeRemaining(), 2);
+
+    ASSERT_FALSE(p.tickSleep());
+    ASSERT_TRUE(p.isSleeping());
+    ASSERT_TRUE(p.tickSleep());
+    ASSERT_EQ(p.getSleepTimeRemaining(), 0);
+
+    p.wakeFromSleep();
+    ASSERT_EQ(p.getState(), ProcessState::READY);
+    ASSERT_EQ(p.getCurrentLine(), 1);
+}
+
 int main() {
     std::cout << "=== Running Process Unit Tests ===\n";
     
@@ -237,6 +260,7 @@ int main() {
         RUN_TEST(test_multiple_processes_different_pids);
         RUN_TEST(test_manual_finish_state);
         RUN_TEST(test_large_instruction_count);
+        RUN_TEST(test_process_sleep_transitions);
         
         std::cout << "\n=== All Process tests passed! ===\n";
         return 0;

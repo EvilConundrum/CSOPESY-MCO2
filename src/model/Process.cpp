@@ -6,6 +6,7 @@
 #include <ctime>
 #include <unordered_map>
 #include <mutex>
+#include <algorithm>
 #include "Instruction.cpp"
 
 enum class ProcessState { READY, RUNNING, WAITING, FINISHED };
@@ -49,6 +50,7 @@ public:
         this->creationTime = std::chrono::system_clock::now();
         this->instructions.reserve(totalInstructions);
         this->assignedCore = -1;
+        this->sleepTimeRemaining = 0;
     }
 
     /**
@@ -79,13 +81,14 @@ public:
         
         // Pass false for printToConsole to suppress console output
         int sleepTime = instructions[currentInstructionLine].execute(variables, logCallback, false);
-        
+
+        currentInstructionLine++;
+
         if (sleepTime > 0) {
-            // Simulate sleep by just returning (actual sleep handled by CPU scheduler)
+            beginSleep(sleepTime);
             return true;
         }
 
-        currentInstructionLine++;
         return true;
     }
 
@@ -209,6 +212,7 @@ public:
         currentInstructionLine = 0;
         state = ProcessState::READY;
         variables.clear(); // 🔹 Reset variable memory too
+        sleepTimeRemaining = 0;
     }
 
     /**
@@ -299,6 +303,48 @@ public:
     int getAssignedCore() const
     {
         return assignedCore;
+    }
+
+    bool isSleeping() const
+    {
+        return sleepTimeRemaining > 0 && state == ProcessState::WAITING;
+    }
+
+    int getSleepTimeRemaining() const
+    {
+        return sleepTimeRemaining;
+    }
+
+    void beginSleep(int ticks)
+    {
+        sleepTimeRemaining = std::max(0, ticks);
+        if (sleepTimeRemaining > 0) {
+            setState(ProcessState::WAITING);
+        }
+    }
+
+    bool tickSleep(int ticks = 1)
+    {
+        if (sleepTimeRemaining <= 0) {
+            return true;
+        }
+
+        sleepTimeRemaining -= std::max(1, ticks);
+        if (sleepTimeRemaining <= 0) {
+            sleepTimeRemaining = 0;
+            return true;
+        }
+        return false;
+    }
+
+    void wakeFromSleep()
+    {
+        sleepTimeRemaining = 0;
+        if (isFinished()) {
+            setState(ProcessState::FINISHED);
+        } else {
+            setState(ProcessState::READY);
+        }
     }
 
 private:
