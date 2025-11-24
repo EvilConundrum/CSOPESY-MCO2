@@ -3,6 +3,7 @@
 #include <unordered_map>
 #include <string>
 #include "../src/model/Instruction.cpp"
+#include "../src/model/InstructionParser.cpp"
 
 #define TEST(name) void name()
 #define ASSERT_TRUE(x) assert(x)
@@ -198,6 +199,31 @@ TEST(test_large_numbers) {
     ASSERT_EQ(vars["big"], 65535);
 }
 
+// Test: Instruction parser basic functionality
+TEST(test_instruction_parser_basic) {
+    InstructionParser parser("DECLARE varA 10; ADD varA varA 5; SLEEP 3");
+    ASSERT_TRUE(parser.parse());
+    const auto& parsed = parser.getInstructions();
+    ASSERT_EQ(parsed.size(), 3);
+    ASSERT_EQ(parsed[0].getCommand(), "DECLARE");
+    ASSERT_EQ(parsed[1].getCommand(), "ADD");
+    ASSERT_EQ(parsed[2].getCommand(), "SLEEP");
+}
+
+// Test: Instruction parser handles PRINT concatenation syntax
+TEST(test_instruction_parser_print_syntax) {
+    InstructionParser parser("DECLARE varA 10; PRINT(\"Result: \" + varA)");
+    ASSERT_TRUE(parser.parse());
+    const auto& parsed = parser.getInstructions();
+    ASSERT_EQ(parsed.size(), 2);
+    ASSERT_EQ(parsed[1].getCommand(), "PRINT");
+    auto args = parsed[1].getArgs();
+    ASSERT_EQ(args.size(), 3);
+    ASSERT_EQ(args[0], "\"Result: \"");
+    ASSERT_EQ(args[1], "+");
+    ASSERT_EQ(args[2], "varA");
+}
+
 int main() {
     std::cout << "=== Running Instruction Unit Tests ===\n";
     
@@ -217,6 +243,8 @@ int main() {
         RUN_TEST(test_instruction_with_logging);
         RUN_TEST(test_empty_arguments);
         RUN_TEST(test_large_numbers);
+        RUN_TEST(test_instruction_parser_basic);
+        RUN_TEST(test_instruction_parser_print_syntax);
         
         std::cout << "\n=== All Instruction tests passed! ===\n";
         return 0;

@@ -303,6 +303,61 @@ public:
                         screenHandler->displayScreenList();
                     }
                     break;
+
+                case 4: // custom instructions
+                    if (userInput.size() < 5)
+                    {
+                        this->cli.displayMessage("Usage: screen -c <name> <memory_size> \"<instructions>\"");
+                        break;
+                    }
+
+                    screenName = userInput[2];
+                    int memorySize = 0;
+                    try
+                    {
+                        memorySize = std::stoi(userInput[3]);
+                    }
+                    catch (const std::exception &)
+                    {
+                        this->cli.displayMessage("Invalid memory size. Please provide a numeric value.");
+                        break;
+                    }
+
+                    auto assembleTokens = [](const std::vector<std::string> &tokens, size_t startIndex)
+                    {
+                        std::ostringstream oss;
+                        for (size_t i = startIndex; i < tokens.size(); ++i)
+                        {
+                            if (i > startIndex)
+                            {
+                                oss << ' ';
+                            }
+                            oss << tokens[i];
+                        }
+                        return oss.str();
+                    };
+
+                    std::string rawInstructions = trimString(assembleTokens(userInput, 4));
+                    if (rawInstructions.size() >= 2 && rawInstructions.front() == '"' && rawInstructions.back() == '"')
+                    {
+                        rawInstructions = rawInstructions.substr(1, rawInstructions.size() - 2);
+                    }
+
+                    if (rawInstructions.empty())
+                    {
+                        this->cli.displayMessage("Instruction string cannot be empty.");
+                        break;
+                    }
+
+                    if (screenHandler->createCustomProcess(screenName, memorySize, rawInstructions))
+                    {
+                        this->cli.displayMessage("Custom process created. Use 'screen -r " + screenName + "' to attach.");
+                    }
+                    else
+                    {
+                        this->cli.displayMessage("Failed to create custom process.");
+                    }
+                    break;
                 }
                 break; // Break from SCREEN case
             }
