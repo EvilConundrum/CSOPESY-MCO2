@@ -32,7 +32,7 @@ public:
         // Generate process name with proper formatting (p01, p02, etc.)
         processCounter++;
         std::stringstream ss;
-        ss << "p" << std::setfill('0') << std::setw(2) << processCounter;
+        ss << "p" << std::setfill('0') << std::setw(4) << processCounter;
         std::string processName = ss.str();
 
         // Determine number of instructions
