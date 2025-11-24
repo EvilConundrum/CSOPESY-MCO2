@@ -63,6 +63,8 @@ public:
                 screenMode = 2; // view specific screen
             else if (args[1] == "-ls" && args.size() == 2)
                 screenMode = 3; // list screens
+            else if (args[1] == "-c" && args.size() >= 5)
+                screenMode = 4; // custom instructions
             else
             {
                 std::cout << "Unknown screen option: " << args[1] << std::endl;

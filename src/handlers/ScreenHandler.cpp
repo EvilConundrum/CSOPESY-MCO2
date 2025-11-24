@@ -4,6 +4,7 @@
 #include "GeneratorHandler.cpp"
 #include "ScheduleHandler.cpp"
 #include "ReportHandler.cpp"
+#include "../model/InstructionParser.cpp"
 #include <map>
 #include <memory>
 #include <mutex>
@@ -101,6 +102,72 @@ public:
 
         std::cout << "Process " << processName << " created with "
                   << process->getTotalInstructions() << " instructions.\n";
+        return true;
+    }
+
+    /**
+     * Creates a process using user-defined instructions (screen -c)
+     */
+    bool createCustomProcess(const std::string& processName,
+                             int memorySize,
+                             const std::string& instructionBlob) {
+        if (processName.empty()) {
+            std::cout << "Process name cannot be empty.\n";
+            return false;
+        }
+
+        if (instructionBlob.empty()) {
+            std::cout << "Instruction list cannot be empty.\n";
+            return false;
+        }
+
+        if (memorySize <= 0) {
+            std::cout << "Process memory size must be greater than zero.\n";
+            return false;
+        }
+
+        InstructionParser parser(instructionBlob);
+        if (!parser.parse()) {
+            std::cout << "Invalid command: unable to parse instructions.\n";
+            return false;
+        }
+
+        const auto& parsedInstructions = parser.getInstructions();
+        if (parsedInstructions.empty() || parsedInstructions.size() > 50) {
+            std::cout << "Invalid command: instruction count must be between 1 and 50.\n";
+            return false;
+        }
+
+        {
+            std::lock_guard<std::mutex> lock(processesMutex);
+            cleanupFinishedProcessesLocked();
+            if (processes.find(processName) != processes.end()) {
+                std::cout << "Process " << processName << " already exists.\n";
+                return false;
+            }
+        }
+
+        auto process = std::make_shared<Process>(processName, static_cast<int>(parsedInstructions.size()));
+        for (const auto& instr : parsedInstructions) {
+            process->addInstruction(instr);
+        }
+        process->setMemoryRequired(memorySize);
+
+        {
+            std::lock_guard<std::mutex> lock(processesMutex);
+            processes[processName] = process;
+        }
+
+        if (scheduleHandler) {
+            scheduleHandler->addProcess(process);
+        }
+
+        if (reportHandler) {
+            reportHandler->recordProcessStart(process);
+        }
+
+        std::cout << "Process " << processName << " created with "
+                  << parsedInstructions.size() << " custom instructions.\n";
         return true;
     }
 
