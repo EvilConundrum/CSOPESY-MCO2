@@ -6,10 +6,7 @@
 #include "./Frame.cpp"
 
 /**
- * TODO: THIS IS VERY WRONG AND NEEDS TO BE REWRITTEN LATER
- * I DO NOT WANT TO THINK ABOUT HOW DEMAND PAGING WORKS RN
- *
- * UPDATE 1: I THINK I AM COOKING
+ * Memory management unit, handles page reads/writes and page faults
  */
 class Memory
 {
@@ -41,25 +38,7 @@ public:
     {
         // save all allocated frames to backing store
         for (auto &frame : physicalMemory)
-        {
-            if (frame.isValid() && frame.isDirty())
-            {
-                backingStore.writeRow(frame);
-                frame.releaseMemory();
-            }
-        }
-    }
-
-    void init()
-    {
-        this->numFrames = this->getNumFrames(*config);
-        this->physicalMemory = std::vector<Frame>();
-
-        for (int i = 0; i < this->numFrames; i++)
-        {
-            Frame newFrame(i, config->getMemPerFrame());
-            this->physicalMemory.push_back(newFrame);
-        }
+            frame.releaseMemory();
     }
 
     /**
@@ -116,30 +95,24 @@ public:
     int makePage() { return this->backingStore.addRow(); }
 
     /**
-     * Marks that page as free in the backing store
+     * Deallocates the page from the physical memory and backing store
+     * is called when a process terminates or completes
      */
-    void freePage(int pageNumber) { this->backingStore.freePage(pageNumber); }
-
-    void allocateFrame()
+    void freePage(int pageNumber)
     {
-        int index = 0;
-        while (index < this->getNumFrames(*config))
-        {
-            if (!this->physicalMemory[index].isValid())
-            {
-                // allocate frame here
-                break;
-            }
-            index++;
-        }
+        int index = getFrameByPageNumber(pageNumber);
+
+        // release if found in physical memory
+        if (index >= 0)
+            physicalMemory[index].releaseMemory();
+
+        // free from backing store
+        this->backingStore.freePage(pageNumber);
     }
 
-    // extra functions for vmstat
+    // extra functions for vmstat and debugging
 
-    std::vector<uint8_t> getPageData(int pageNumber)
-    {
-        return this->backingStore.readRow(pageNumber);
-    }
+    std::vector<uint8_t> getPageData(int pageNumber) { return this->backingStore.readRow(pageNumber); }
 
     uint64_t getNumPagedIn() const { return num_paged_in; }
     uint64_t getNumPagedOut() const { return num_paged_out; }
@@ -148,6 +121,18 @@ public:
     uint64_t getNumFaults() const { return num_faults; }
 
 private:
+    void init()
+    {
+        this->numFrames = this->getNumFrames(*config);
+        this->physicalMemory = std::vector<Frame>();
+
+        for (int i = 0; i < this->numFrames; i++)
+        {
+            Frame newFrame(i, config->getMemPerFrame());
+            this->physicalMemory.push_back(newFrame);
+        }
+    }
+
     int getNumFrames(const Config &config)
     {
         return config.getMaxOverallMem() / config.getMemPerFrame();

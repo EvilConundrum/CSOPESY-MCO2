@@ -53,7 +53,7 @@ public:
     }
 
     /**
-     * Releases memory from current process (after process completes)
+     * Releases memory from current process (called upon eviction or process termination)
      * Returns true if successful, false if frame was not allocated to begin with
      */
     bool releaseMemory()
