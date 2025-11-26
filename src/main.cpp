@@ -274,18 +274,31 @@ public:
                 switch (screenMode)
                 {
                 case 1: // create screen
-                    if (userInput.size() < 3)
+                {
+                    if (userInput.size() < 4)
                     {
-                        this->cli.displayMessage("Please provide process name to create.");
+                        this->cli.displayMessage("Usage: screen -s <name> <memory_bytes>");
                         break;
                     }
 
                     screenName = userInput[2];
-                    if (screenHandler->createScreen(screenName))
+                    int memoryBytes = 0;
+                    try
+                    {
+                        memoryBytes = std::stoi(userInput[3]);
+                    }
+                    catch (...)
+                    {
+                        this->cli.displayMessage("Invalid memory allocation: " + userInput[3]);
+                        break;
+                    }
+
+                    if (screenHandler->createScreen(screenName, memoryBytes))
                     {
                         this->cli.displayMessage("Process created. Use 'screen -r " + screenName + "' to attach.");
                     }
                     break;
+                }
                     
                 case 2: // view specific screen (interactive mode)
                     if (userInput.size() < 3)
