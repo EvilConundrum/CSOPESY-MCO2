@@ -14,6 +14,7 @@ enum class InstructionType {
     SUBTRACT,
     SLEEP,
     FOR,
+    // TODO: Add READ and WRITE instruction types to support simulated memory ops via Process.
     UNKNOWN
 };
 
@@ -41,6 +42,7 @@ public:
         else if (cmd == "SUBTRACT") type = InstructionType::SUBTRACT;
         else if (cmd == "SLEEP") type = InstructionType::SLEEP;
         else if (cmd == "FOR") type = InstructionType::FOR;
+        // TODO: Parse READ/WRITE tokens and map to new InstructionType entries once Process exposes memory ops.
         else type = InstructionType::UNKNOWN;
     }
 
@@ -63,6 +65,7 @@ public:
     int execute(std::unordered_map<std::string, uint16_t> &variables,
                 std::function<void(const std::string&)> logCallback = nullptr,
                 bool printToConsole = true) const {
+        // TODO: Route READ/WRITE instruction types to dedicated handlers once Process exposes virtual memory APIs.
         switch (type) {
             case InstructionType::PRINT:
                 executePrint(variables, logCallback, printToConsole);
@@ -136,6 +139,7 @@ private:
             if (logCallback) logCallback(errMsg);
             return;
         }
+        // TODO: Enforce 32-variable / 64-byte symbol table cap before adding new entries.
         std::string var = args[0];
         uint16_t value = getValue(vars, args[1]);
         vars[var] = value;
@@ -238,5 +242,30 @@ private:
 
         // FOR itself is considered instant (0 ticks) for unit tests
         return 0;
-    }    
+    }
+
+    void executeRead(std::unordered_map<std::string, uint16_t> &vars,
+                     std::function<void(const std::string&)> logCallback,
+                     bool printToConsole) const {
+        // TODO: Validate args[0] as destination variable and args[1] as hex address string.
+        // TODO: Enforce symbol-table capacity before creating/updating dest.
+        // TODO: Parse address, call into Process-managed virtual memory (e.g., Process::readUInt16) and store result.
+        // TODO: Log success, and propagate Process memory faults so the offending process can terminate.
+        (void)vars;
+        (void)logCallback;
+        (void)printToConsole;
+    }
+
+    void executeWrite(std::unordered_map<std::string, uint16_t> &vars,
+                      std::function<void(const std::string&)> logCallback,
+                      bool printToConsole) const {
+        // TODO: Validate args[0] as hex address and args[1] as source (literal or variable name).
+        // TODO: Clamp the resolved uint16_t value before writing.
+        // TODO: Invoke Process::writeUInt16 (or equivalent) and log the outcome.
+        // TODO: Surface access violations so the owning process can be shut down.
+        (void)vars;
+        (void)logCallback;
+        (void)printToConsole;
+    }
+
 };
