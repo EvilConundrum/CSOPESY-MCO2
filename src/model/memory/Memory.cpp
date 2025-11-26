@@ -20,6 +20,9 @@ class Memory
     uint16_t pageSize;
     uint16_t numFrames;
 
+    uint16_t num_hits;
+    uint16_t num_faults;
+
     uint64_t num_paged_in;
     uint64_t num_paged_out;
 
@@ -50,12 +53,12 @@ public:
     void init()
     {
         this->numFrames = this->getNumFrames(*config);
-        this->physicalMemory = std::vector<Frame>(this->numFrames);
+        this->physicalMemory = std::vector<Frame>();
 
         for (int i = 0; i < this->numFrames; i++)
         {
             Frame newFrame(i, config->getMemPerFrame());
-            this->physicalMemory[i] = newFrame;
+            this->physicalMemory.push_back(newFrame);
         }
     }
 
@@ -138,6 +141,12 @@ public:
         return this->backingStore.readRow(pageNumber);
     }
 
+    uint64_t getNumPagedIn() const { return num_paged_in; }
+    uint64_t getNumPagedOut() const { return num_paged_out; }
+
+    uint64_t getNumHits() const { return num_hits; }
+    uint64_t getNumFaults() const { return num_faults; }
+
 private:
     int getNumFrames(const Config &config)
     {
@@ -153,11 +162,11 @@ private:
         int index = -1;
         for (int i = 0; i < physicalMemory.size() && index == -1; i++)
         {
-            if (physicalMemory[i].isValid())
-                if (physicalMemory[i].getPageNumber() == pageNumber)
-                    index = i;
-            break;
+            int framePageNumber = physicalMemory[i].getPageNumber();
+            if (framePageNumber >= 0 && framePageNumber == pageNumber)
+                index = i;
         }
+
         return index;
     }
 
@@ -184,7 +193,7 @@ private:
      */
     int getLRUFrame()
     {
-        int lruIndex = 0;
+        int lruIndex = -1;
         uint64_t lruTick = UINT64_MAX;
 
         for (int i = 0; i < physicalMemory.size(); i++)
@@ -207,8 +216,14 @@ private:
     {
         int frameIndex = getFrameByPageNumber(pageNumber);
 
+        // page hit
         if (frameIndex >= 0)
+        {
+            ++num_hits;
             return frameIndex;
+        }
+        ++num_faults;
+
         // handle page fault
 
         // 1.a Check for free frame
@@ -221,11 +236,13 @@ private:
         std::vector<uint8_t> pageData = this->backingStore.readRow(pageNumber);
 
         // 3. reallocate frame
-        Frame &frame = physicalMemory[frameIndex];
-        frame.allocateMemory(pageNumber, currentTick);
+        physicalMemory[frameIndex].allocateMemory(pageNumber, currentTick);
 
         // 4. load data into frame
-        frame.writeFromBackingStore(pageData, currentTick);
+        physicalMemory[frameIndex].writeFromBackingStore(pageData, currentTick);
+
+        // 5. update stats
+        ++num_paged_in;
 
         return frameIndex;
     }
@@ -239,10 +256,9 @@ private:
     {
         int frameToEvict = getLRUFrame();
 
-        Frame victimFrame = physicalMemory[frameToEvict];
-        if (victimFrame.isDirty())
-            backingStore.writeRow(victimFrame);
-        victimFrame.releaseMemory();
+        if (physicalMemory[frameToEvict].isDirty())
+            backingStore.writeRow(physicalMemory[frameToEvict]);
+        physicalMemory[frameToEvict].releaseMemory();
 
         num_paged_out++;
 
