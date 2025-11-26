@@ -2,8 +2,12 @@
 #include <fstream>
 #include <vector>
 #include <iostream>
+#include <queue>
+#include <vector>
+#include <functional>
 #include "Frame.cpp"
 #include "../../view/misc.cpp"
+#include "../Config.cpp"
 
 #ifdef _WIN32
 #define EOL "\r\n" // Windows-readable newlines
@@ -22,13 +26,17 @@
 class BackingStore
 {
     std::string filename;
+    // keeps track of pages between 0 and the current page number for easy reallocation
+    std::priority_queue<int, std::vector<int>, std::greater<int>> freePageNumbers;
     std::fstream file;
-    int pageSize;
-    int rowLength;
+    uint16_t pageSize;
+    uint16_t rowLength;
 
 public:
-    BackingStore(const std::string &name, int ps)
-        : filename(name), pageSize(ps)
+    BackingStore() {}
+
+    BackingStore(const std::string &name, Config *config)
+        : filename(name), pageSize(config->getMemPerFrame())
     {
         rowLength = pageSize * 3 - 1; // "XX " repeated pageSize times
 
@@ -59,9 +67,18 @@ public:
 
     /**
      * Adds an empty row to the end of the backing store
+     * prioritizes using the lowest freed page numbers
+     * returns the new page number
      */
-    void addRow()
+    int addRow()
     {
+        if (!freePageNumbers.empty())
+        {
+            int reusedPage = freePageNumbers.top();
+            freePageNumbers.pop();
+            return reusedPage;
+        }
+
         file.clear();
         file.seekp(0, std::ios::end);
 
@@ -71,6 +88,19 @@ public:
         file.write(s.c_str(), s.size());
         file.write(EOL, EOLLEN);
         file.flush();
+
+        return (file.tellp() / (rowLength + EOLLEN)) - 1;
+    }
+
+    void freePage(int pageNumber)
+    {
+        this->freePageNumbers.push(pageNumber);
+        // TODO: we can hypothetically clear the data in the backing store here if needed
+        // we can also just not do that since it will be overwritten when reused
+
+        // Frame empty(-1, pageSize);                   // dummy frame
+        // empty.allocateMemory(pageNumber, "FREE", 0); // mark as free
+        // this->writeRow(empty);
     }
 
     /**
