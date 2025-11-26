@@ -44,108 +44,109 @@ public:
 
         // Track declared variables to avoid using undeclared ones
         std::unordered_set<std::string> declaredVars;
-        std::uniform_int_distribution<int> valueDist(1, 100); // random int values
+        std::uniform_int_distribution<int> valueDist(1, 100);   // random int values
         std::uniform_int_distribution<int> instrTypeDist(0, 5); // random instruction type
-
-        for (int i = 0; i < numInstructions; i++)
+        int i = 0;
+        while (i < numInstructions)
         {
             Instruction instr;
 
             int type = instrTypeDist(rng);
             switch (type)
             {
-                case 0: // DECLARE
-                {
-                    std::string var = "v" + std::to_string(declaredVars.size() + 1);
-                    int val = valueDist(rng);
-                    instr = Instruction("DECLARE", {var, std::to_string(val)});
-                    declaredVars.insert(var);
-                    break;
-                }
+            case 0: // DECLARE
+            {
+                std::string var = "v" + std::to_string(declaredVars.size() + 1);
+                int val = valueDist(rng);
+                instr = Instruction("DECLARE", {var, std::to_string(val)});
+                declaredVars.insert(var);
+                break;
+            }
 
-                case 1: // ADD
+            case 1: // ADD
+            {
+                if (declaredVars.size() < 1)
+                    continue; // skip if no vars yet
+                std::vector<std::string> vars(declaredVars.begin(), declaredVars.end());
+                std::string dest = vars[rng() % vars.size()];
+                std::string op1 = vars[rng() % vars.size()];
+                std::string op2 = std::to_string(valueDist(rng));
+                instr = Instruction("ADD", {dest, op1, op2});
+                break;
+            }
+
+            case 2: // SUBTRACT
+            {
+                if (declaredVars.size() < 1)
+                    continue;
+                std::vector<std::string> vars(declaredVars.begin(), declaredVars.end());
+                std::string dest = vars[rng() % vars.size()];
+                std::string op1 = vars[rng() % vars.size()];
+                std::string op2 = std::to_string(valueDist(rng));
+                instr = Instruction("SUBTRACT", {dest, op1, op2});
+                break;
+            }
+
+            case 3: // PRINT
+            {
+                if (!declaredVars.empty())
                 {
-                    if (declaredVars.size() < 1)
-                        continue; // skip if no vars yet
                     std::vector<std::string> vars(declaredVars.begin(), declaredVars.end());
-                    std::string dest = vars[rng() % vars.size()];
-                    std::string op1 = vars[rng() % vars.size()];
-                    std::string op2 = std::to_string(valueDist(rng));
-                    instr = Instruction("ADD", {dest, op1, op2});
-                    break;
+                    std::string var = vars[rng() % vars.size()];
+                    instr = Instruction("PRINT", {"\"Value of\"", "+", var});
                 }
-
-                case 2: // SUBTRACT
+                else
                 {
-                    if (declaredVars.size() < 1)
-                        continue;
-                    std::vector<std::string> vars(declaredVars.begin(), declaredVars.end());
-                    std::string dest = vars[rng() % vars.size()];
-                    std::string op1 = vars[rng() % vars.size()];
-                    std::string op2 = std::to_string(valueDist(rng));
-                    instr = Instruction("SUBTRACT", {dest, op1, op2});
-                    break;
+                    instr = Instruction("PRINT", {"\"Hello World!\""});
                 }
+                break;
+            }
 
-                case 3: // PRINT
+            case 4: // SLEEP
+            {
+                std::uniform_int_distribution<int> sleepDist(1, 50);
+                int ticks = sleepDist(rng);
+                instr = Instruction("SLEEP", {std::to_string(ticks)});
+                break;
+            }
+
+            case 5: // FOR
+            {
+                // Create a mini block of subinstructions
+                std::uniform_int_distribution<int> forCountDist(2, 5);
+                int repeat = forCountDist(rng);
+
+                std::vector<Instruction> subInstrs;
+                int subCount = 2 + (rng() % 3); // 2–4 subinstructions
+
+                for (int j = 0; j < subCount; j++)
                 {
-                    if (!declaredVars.empty())
+                    std::uniform_int_distribution<int> subTypeDist(0, 2);
+                    int subType = subTypeDist(rng);
+
+                    if (subType == 0)
+                        subInstrs.push_back(Instruction("PRINT", {"\"Inside loop\"", "+", "\"iteration\""}));
+                    else if (subType == 1 && !declaredVars.empty())
                     {
                         std::vector<std::string> vars(declaredVars.begin(), declaredVars.end());
                         std::string var = vars[rng() % vars.size()];
-                        instr = Instruction("PRINT", {"\"Value of\"", "+", var});
+                        subInstrs.push_back(Instruction("ADD", {var, var, "1"}));
                     }
                     else
-                    {
-                        instr = Instruction("PRINT", {"\"Hello World!\""});
-                    }
-                    break;
+                        subInstrs.push_back(Instruction("SLEEP", {"5"}));
                 }
 
-                case 4: // SLEEP
-                {
-                    std::uniform_int_distribution<int> sleepDist(1, 50);
-                    int ticks = sleepDist(rng);
-                    instr = Instruction("SLEEP", {std::to_string(ticks)});
-                    break;
-                }
+                instr = Instruction("FOR", {std::to_string(repeat)});
+                instr.setSubInstructions(subInstrs);
+                break;
+            }
 
-                case 5: // FOR
-                {
-                    // Create a mini block of subinstructions
-                    std::uniform_int_distribution<int> forCountDist(2, 5);
-                    int repeat = forCountDist(rng);
-
-                    std::vector<Instruction> subInstrs;
-                    int subCount = 2 + (rng() % 3); // 2–4 subinstructions
-
-                    for (int j = 0; j < subCount; j++)
-                    {
-                        std::uniform_int_distribution<int> subTypeDist(0, 2);
-                        int subType = subTypeDist(rng);
-
-                        if (subType == 0)
-                            subInstrs.push_back(Instruction("PRINT", {"\"Inside loop\"", "+", "\"iteration\""}));
-                        else if (subType == 1 && !declaredVars.empty())
-                        {
-                            std::vector<std::string> vars(declaredVars.begin(), declaredVars.end());
-                            std::string var = vars[rng() % vars.size()];
-                            subInstrs.push_back(Instruction("ADD", {var, var, "1"}));
-                        }
-                        else
-                            subInstrs.push_back(Instruction("SLEEP", {"5"}));
-                    }
-
-                    instr = Instruction("FOR", {std::to_string(repeat)});
-                    instr.setSubInstructions(subInstrs);
-                    break;
-                }
-
-                default:
-                    instr = Instruction("PRINT", {"\"Unhandled instruction type\" " + processName + " " + std::to_string(i)}); 
+            default:
+                instr = Instruction("PRINT", {"\"Unhandled instruction type\" " + processName + " " + std::to_string(i)});
             }
 
             process->addInstruction(instr);
+            ++i;
         }
 
         return process;
@@ -187,8 +188,7 @@ public:
     {
         int numInstructions = std::uniform_int_distribution<int>(
             config.getMinInstructions(),
-            config.getMaxInstructions()
-        )(rng);
+            config.getMaxInstructions())(rng);
 
         // Create process with custom name
         auto process = std::make_shared<Process>(customName, numInstructions);
@@ -198,105 +198,107 @@ public:
         std::uniform_int_distribution<int> valueDist(1, 100);
         std::uniform_int_distribution<int> instrTypeDist(0, 5);
 
-        for (int i = 0; i < numInstructions; i++)
+        int i = 0;
+        while (i < numInstructions)
         {
             Instruction instr;
 
             int type = instrTypeDist(rng);
             switch (type)
             {
-                case 0: // DECLARE
-                {
-                    std::string var = "v" + std::to_string(declaredVars.size() + 1);
-                    int val = valueDist(rng);
-                    instr = Instruction("DECLARE", {var, std::to_string(val)});
-                    declaredVars.insert(var);
-                    break;
-                }
+            case 0: // DECLARE
+            {
+                std::string var = "v" + std::to_string(declaredVars.size() + 1);
+                int val = valueDist(rng);
+                instr = Instruction("DECLARE", {var, std::to_string(val)});
+                declaredVars.insert(var);
+                break;
+            }
 
-                case 1: // ADD
+            case 1: // ADD
+            {
+                if (declaredVars.size() < 1)
+                    continue;
+                std::vector<std::string> vars(declaredVars.begin(), declaredVars.end());
+                std::string dest = vars[rng() % vars.size()];
+                std::string op1 = vars[rng() % vars.size()];
+                std::string op2 = std::to_string(valueDist(rng));
+                instr = Instruction("ADD", {dest, op1, op2});
+                break;
+            }
+
+            case 2: // SUBTRACT
+            {
+                if (declaredVars.size() < 1)
+                    continue;
+                std::vector<std::string> vars(declaredVars.begin(), declaredVars.end());
+                std::string dest = vars[rng() % vars.size()];
+                std::string op1 = vars[rng() % vars.size()];
+                std::string op2 = std::to_string(valueDist(rng));
+                instr = Instruction("SUBTRACT", {dest, op1, op2});
+                break;
+            }
+
+            case 3: // PRINT
+            {
+                if (!declaredVars.empty())
                 {
-                    if (declaredVars.size() < 1)
-                        continue;
                     std::vector<std::string> vars(declaredVars.begin(), declaredVars.end());
-                    std::string dest = vars[rng() % vars.size()];
-                    std::string op1 = vars[rng() % vars.size()];
-                    std::string op2 = std::to_string(valueDist(rng));
-                    instr = Instruction("ADD", {dest, op1, op2});
-                    break;
+                    std::string var = vars[rng() % vars.size()];
+                    instr = Instruction("PRINT", {"\"Value of\"", "+", var});
                 }
-
-                case 2: // SUBTRACT
+                else
                 {
-                    if (declaredVars.size() < 1)
-                        continue;
-                    std::vector<std::string> vars(declaredVars.begin(), declaredVars.end());
-                    std::string dest = vars[rng() % vars.size()];
-                    std::string op1 = vars[rng() % vars.size()];
-                    std::string op2 = std::to_string(valueDist(rng));
-                    instr = Instruction("SUBTRACT", {dest, op1, op2});
-                    break;
+                    instr = Instruction("PRINT", {"\"Hello World!\""});
                 }
+                break;
+            }
 
-                case 3: // PRINT
+            case 4: // SLEEP
+            {
+                std::uniform_int_distribution<int> sleepDist(1, 50);
+                int ticks = sleepDist(rng);
+                instr = Instruction("SLEEP", {std::to_string(ticks)});
+                break;
+            }
+
+            case 5: // FOR
+            {
+                std::uniform_int_distribution<int> forCountDist(2, 5);
+                int repeat = forCountDist(rng);
+
+                std::vector<Instruction> subInstrs;
+                int subCount = 2 + (rng() % 3);
+
+                for (int j = 0; j < subCount; j++)
                 {
-                    if (!declaredVars.empty())
+                    std::uniform_int_distribution<int> subTypeDist(0, 2);
+                    int subType = subTypeDist(rng);
+
+                    if (subType == 0)
+                        subInstrs.push_back(Instruction("PRINT", {"\"Inside loop\"", "+", "\"iteration\""}));
+                    else if (subType == 1 && !declaredVars.empty())
                     {
                         std::vector<std::string> vars(declaredVars.begin(), declaredVars.end());
                         std::string var = vars[rng() % vars.size()];
-                        instr = Instruction("PRINT", {"\"Value of\"", "+", var});
+                        subInstrs.push_back(Instruction("ADD", {var, var, "1"}));
                     }
                     else
-                    {
-                        instr = Instruction("PRINT", {"\"Hello World!\""});
-                    }
-                    break;
+                        subInstrs.push_back(Instruction("SLEEP", {"5"}));
                 }
 
-                case 4: // SLEEP
-                {
-                    std::uniform_int_distribution<int> sleepDist(1, 50);
-                    int ticks = sleepDist(rng);
-                    instr = Instruction("SLEEP", {std::to_string(ticks)});
-                    break;
-                }
+                instr = Instruction("FOR", {std::to_string(repeat)});
+                instr.setSubInstructions(subInstrs);
+                break;
+            }
 
-                case 5: // FOR
-                {
-                    std::uniform_int_distribution<int> forCountDist(2, 5);
-                    int repeat = forCountDist(rng);
-
-                    std::vector<Instruction> subInstrs;
-                    int subCount = 2 + (rng() % 3);
-
-                    for (int j = 0; j < subCount; j++)
-                    {
-                        std::uniform_int_distribution<int> subTypeDist(0, 2);
-                        int subType = subTypeDist(rng);
-
-                        if (subType == 0)
-                            subInstrs.push_back(Instruction("PRINT", {"\"Inside loop\"", "+", "\"iteration\""}));
-                        else if (subType == 1 && !declaredVars.empty())
-                        {
-                            std::vector<std::string> vars(declaredVars.begin(), declaredVars.end());
-                            std::string var = vars[rng() % vars.size()];
-                            subInstrs.push_back(Instruction("ADD", {var, var, "1"}));
-                        }
-                        else
-                            subInstrs.push_back(Instruction("SLEEP", {"5"}));
-                    }
-
-                    instr = Instruction("FOR", {std::to_string(repeat)});
-                    instr.setSubInstructions(subInstrs);
-                    break;
-                }
-
-                default:
-                    instr = Instruction("PRINT", {"\"Unhandled instruction type\""});
-                    break;
+            default:
+                instr = Instruction("PRINT", {"\"Unhandled instruction type\""});
+                break;
             }
 
             process->addInstruction(instr);
+            i++;
         }
 
         process->setState(ProcessState::READY);
