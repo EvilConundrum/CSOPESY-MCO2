@@ -1,7 +1,11 @@
-typedef struct Frame
-{
+#pragma once
+#include <string>
 
-} Frame;
+typedef struct Variable
+{
+    std::string name;
+    unsigned int address; // virtual address
+} Variable;
 
 typedef struct PageTableEntry
 {

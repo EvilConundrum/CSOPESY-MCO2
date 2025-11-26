@@ -8,42 +8,45 @@
 class Frame
 {
     int frameNumber; // this never changes after initialization
-    int pageNumber; // page number of the process currently occupying this frame
-    std::string currentProcessID; // empty string indicates free frame
+    int pageNumber;  // page number of the process currently occupying this frame
+    bool dirty;
     uint64_t lastAccessTick;
     std::vector<uint8_t> data; // data is stored as bytes
 public:
     Frame(int frameNum, int frameSize)
     {
-        this->lastAccessTick = 0;
+        this->lastAccessTick = UINT64_MAX; // indicates never accessed
         this->frameNumber = frameNum;
+        this->pageNumber = -1; // indicates free frame
+        this->dirty = false;
         this->data.resize(frameSize, 0); // initialize with zeros
     }
 
     // Getters
     int getFrameNumber() const { return this->frameNumber; }
     int getPageNumber() const { return this->pageNumber; }
-    std::string getCurrentProcessID() const { return this->currentProcessID; }
+    uint64_t getLastAccessTick() const { return this->lastAccessTick; }
+
+    // Status getter
+    bool isValid() const { return this->pageNumber != -1; }
+    bool isDirty() const { return this->dirty; }
 
     // Setters
     void updateLastAccessTick(uint64_t tick) { this->lastAccessTick = tick; }
 
     /**
-     * Returns true if frame is currently allocated to a process
-     */
-    bool isValid() const { return !this->currentProcessID.empty() || this->lastAccessTick != 0; }
-
-    /**
      * Reserves memory for a process ID
      * Returns true if successful, false if already allocated
      */
-    bool allocateMemory(int pageNumber, std::string processID, uint64_t currentTick)
+    bool allocateMemory(int pageNumber, uint64_t currentTick)
     {
         if (!this->isValid())
         {
-            this->currentProcessID = processID;
             this->pageNumber = pageNumber;
             this->updateLastAccessTick(currentTick);
+            this->dirty = false;
+            // clear data upon allocation
+            std::fill(this->data.begin(), this->data.end(), 0);
             return true;
         }
         return false; // frame already allocated
@@ -53,13 +56,13 @@ public:
      * Releases memory from current process (after process completes)
      * Returns true if successful, false if frame was not allocated to begin with
      */
-    bool releaseMemory(uint64_t currentTick)
+    bool releaseMemory()
     {
         if (this->isValid())
         {
-            this->currentProcessID = "";
-            this->lastAccessTick = 0;
-            std::fill(this->data.begin(), this->data.end(), 0);
+            this->pageNumber = -1;
+            this->updateLastAccessTick(UINT64_MAX);
+            this->dirty = false;
             return true;
         }
         return false; // frame was not allocated to begin with
@@ -116,7 +119,10 @@ public:
         bytes[1] = (inputData >> 8) & 0xFF;
         bool success = this->writeBytes(offset, bytes);
         if (success)
+        {
             this->updateLastAccessTick(currentTick);
+            this->dirty = true;
+        }
 
         return success;
     }
@@ -132,7 +138,7 @@ private:
     bool writeBytes(int offset, const std::vector<uint8_t> &inputData)
     {
         if (offset + inputData.size() > data.size() || offset < 0)
-            return false; // page fault
+            return false; // exceeds frame size
         std::copy(inputData.begin(), inputData.end(), data.begin() + offset);
         return true;
     }
