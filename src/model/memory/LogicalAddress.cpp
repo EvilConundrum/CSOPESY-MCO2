@@ -1,16 +1,14 @@
 #pragma once
 #include <string>
 
-struct LogicalAddress
+typedef struct LogicalAddress
 {
     int pageNumber;
     int offSet;
-};
+} LogicalAddress;
 
 uint16_t convHexToUint16(const std::string &hexStr)
 {
-    // strip first 2 characters if "0x" prefix is present
-
     std::string hexStrCopy = hexStr;
     if (hexStrCopy.rfind("0x", 0) == 0 || hexStrCopy.rfind("0X", 0) == 0)
         hexStrCopy = hexStrCopy.substr(2);
@@ -20,10 +18,7 @@ uint16_t convHexToUint16(const std::string &hexStr)
 
 LogicalAddress parseLogicalAddress(uint16_t logicalAddress, int pageSize)
 {
-    LogicalAddress la;
-    la.pageNumber = logicalAddress / pageSize;
-    la.offSet = logicalAddress % pageSize;
-    return la;
+    return {logicalAddress / pageSize, logicalAddress % pageSize};
 }
 
 LogicalAddress parseLogicalAddress(std::string addressStr, int pageSize)

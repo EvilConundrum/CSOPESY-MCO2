@@ -92,16 +92,7 @@ public:
         return (file.tellp() / (rowLength + EOLLEN)) - 1;
     }
 
-    void freePage(int pageNumber)
-    {
-        this->freePageNumbers.push(pageNumber);
-        // TODO: we can hypothetically clear the data in the backing store here if needed
-        // we can also just not do that since it will be overwritten when reused
-
-        // Frame empty(-1, pageSize);                   // dummy frame
-        // empty.allocateMemory(pageNumber, "FREE", 0); // mark as free
-        // this->writeRow(empty);
-    }
+    void freePage(int pageNumber) { this->freePageNumbers.push(pageNumber); }
 
     /**
      * Writes a frame to the backing store at the page number specified in the frame

@@ -19,9 +19,8 @@ void memtest()
      */
 
     // initialize the backing store
-    for (int i = 0; i < 8; i++)
-        memory.makePage();
-
+    memory.makePages(1 << 8);
+    
     std::vector<int> pageSequence = {0, 1, 2, 3, 1, 2, 3, 4, 5, 6, 7, 0, 1, 2, 3, 1, 2, 3, 4, 5, 6, 7};
 
     for (int tick = 0; tick < pageSequence.size(); tick++)
