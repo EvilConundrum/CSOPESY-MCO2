@@ -4,7 +4,7 @@
 typedef struct LogicalAddress
 {
     int pageNumber;
-    int offSet;
+    int offset;
 } LogicalAddress;
 
 uint16_t convHexToUint16(const std::string &hexStr)
