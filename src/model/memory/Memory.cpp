@@ -88,11 +88,18 @@ public:
         return false;
     }
 
-    /**
-     * Creates or reuses a page in the backing store
-     * Returns the page number to be used
-     */
-    int makePage() { return this->backingStore.addRow(); }
+    std::vector<int> makePages(int memNeeded)
+    {
+        int pagesNeeded = memNeeded / pageSize;
+        if (memNeeded % pageSize != 0)
+            pagesNeeded++;
+
+        std::vector<int> pageNumbers;
+        for (int i = 0; i < pagesNeeded; i++)
+            pageNumbers.push_back(this->backingStore.addRow());
+
+        return pageNumbers;
+    }
 
     /**
      * Deallocates the page from the physical memory and backing store
