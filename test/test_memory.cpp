@@ -3,6 +3,8 @@
 #include <cstdint>
 #include "../src/model/memory/BackingStore.cpp"
 #include "../src/model/memory/Frame.cpp"
+#include "../src/model/Config.cpp"
+#include "../src/model/memory/LogicalAddress.cpp"
 #include "../src/model/memory/Memory.cpp"
 
 void memtest()

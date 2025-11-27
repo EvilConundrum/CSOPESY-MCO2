@@ -4,7 +4,7 @@
 #include "../Config.cpp"
 #include "./BackingStore.cpp"
 #include "./Frame.cpp"
-
+#include "../model/memory/LogicalAddress.cpp"
 /**
  * Memory management unit, handles page reads/writes and page faults
  */
@@ -41,6 +41,8 @@ public:
             frame.releaseMemory();
     }
 
+    uint16_t getPageSize() { return this->pageSize; }
+
     /**
      * Write data to a frame at given offset
      * Returns true if write was successful, false if page fault occurred
@@ -57,16 +59,21 @@ public:
         }
     }
 
-    uint16_t read(int pageNumber, int offset, uint64_t currentTick)
+    uint16_t read(LogicalAddress address, uint64_t currentTick)
     {
-        int frameIndex = handlePageFault(pageNumber, currentTick);
+        int frameIndex = handlePageFault(address.pageNumber, currentTick);
         if (frameIndex >= 0)
         {
             Frame &frame = physicalMemory[frameIndex];
-            return frame.getData(offset, currentTick);
+            return frame.getData(address.offset, currentTick);
         }
 
         return 0; // should not reach here
+    }
+
+    uint16_t read(int address, uint64_t currentTick)
+    {
+        return read({address / pageSize, address % pageSize}, currentTick);
     }
 
     /**

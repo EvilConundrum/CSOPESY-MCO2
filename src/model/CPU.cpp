@@ -42,7 +42,7 @@ public:
      * Returns the process if it needs to be re-queued (time quantum expired)
      * Returns nullptr if process continues or is finished
      */
-    std::shared_ptr<Process> executeNext(WaitingQueue* waitingQueue = nullptr)
+    std::shared_ptr<Process> executeNext(WaitingQueue* waitingQueue = nullptr, Memory* memory = nullptr, uint64_t currentTick = 0)
     {
         if (this->currProcess != nullptr && !this->currProcess->hasInstructions())
         {
@@ -60,7 +60,7 @@ public:
             }
 
             // Execute next instruction
-            bool executed = this->currProcess->executeNextInstruction();
+            bool executed = this->currProcess->executeNextInstruction(memory, currentTick);
 
             if (this->currProcess != nullptr && this->currProcess->isSleeping()) {
                 if (waitingQueue != nullptr) {
@@ -115,7 +115,7 @@ public:
      * Executes one instruction without returning preempted process
      * (For simpler execution flow)
      */
-    void executeInstruction(WaitingQueue* waitingQueue = nullptr)
+    void executeInstruction(WaitingQueue* waitingQueue = nullptr, Memory* memory = nullptr, uint64_t currentTick = 0)
     {
         if (this->currProcess != nullptr && !this->currProcess->hasInstructions())
         {
@@ -133,7 +133,7 @@ public:
             }
 
             // Execute next instruction
-            this->currProcess->executeNextInstruction();
+            this->currProcess->executeNextInstruction(memory, currentTick);
 
             if (this->currProcess != nullptr && this->currProcess->isSleeping()) {
                 if (waitingQueue != nullptr) {

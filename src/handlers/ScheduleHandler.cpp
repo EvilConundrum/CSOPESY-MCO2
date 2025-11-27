@@ -3,6 +3,7 @@
 #include "../model/readyqueue/FCFS.cpp"
 #include "../model/readyqueue/RoundRobin.cpp"
 #include "../model/WaitingQueue.cpp"
+#include "../model/memory/Memory.cpp"
 #include <vector>
 #include <memory>
 #include <atomic>
@@ -15,20 +16,23 @@ private:
     std::string schedulerType;
     std::atomic<unsigned long long> cpuTicks;
     std::shared_ptr<WaitingQueue> waitingQueue;
+    std::shared_ptr<Memory> memory;
 
 public:
-    ScheduleHandler(const std::string &schedulerType, int timeQuantum = 5)
+    ScheduleHandler(const std::string &schedulerType, int timeQuantum = 5, Config *config = nullptr, const std::string &backingStoreFilename = "backing_store.txt")
         : schedulerType(schedulerType)
     {
         this->cpuTicks = 0;
         this->waitingQueue = std::make_shared<WaitingQueue>();
+        this->memory = std::make_shared<Memory>(config, backingStoreFilename);
 
         // Initialize the appropriate scheduler
-        if (schedulerType == "fcfs") {
+        if (schedulerType == "fcfs")
             readyQueue = std::make_shared<FCFS>();
-        } else if (schedulerType == "rr") {
+        else if (schedulerType == "rr")
             readyQueue = std::make_shared<RoundRobin>(timeQuantum);
-        } else {
+        else
+        {
             // Default to FCFS
             readyQueue = std::make_shared<FCFS>();
         }
@@ -79,8 +83,8 @@ public:
             if (!cpu.isIdle())
             {
                 // Execute next instruction and check if process needs requeuing
-                auto processToRequeue = cpu.executeNext(waitingQueue.get());
-                
+                auto processToRequeue = cpu.executeNext(waitingQueue.get(), memory.get(), cpuTicks.load());
+
                 // If process was preempted, requeue it
                 if (processToRequeue != nullptr && !processToRequeue->isFinished())
                 {
@@ -89,6 +93,14 @@ public:
                         // Re-add to ready queue for Round Robin
                         readyQueue->enqueueProcess(processToRequeue);
                     }
+                }
+
+                // if process finished, sequester memory pages
+                if (processToRequeue != nullptr && processToRequeue->isFinished())
+                {
+                    std::vector<int> allocatedPages = processToRequeue->getAllocatedPages();
+                    for (int pageNumber : allocatedPages)
+                        this->memory->freePage(pageNumber);
                 }
             }
 
@@ -107,48 +119,14 @@ public:
     /**
      * Gets the ready queue
      */
-    std::shared_ptr<ReadyQueue> getReadyQueue()
-    {
-        return readyQueue;
-    }
+    std::shared_ptr<ReadyQueue> getReadyQueue() { return readyQueue; }
+    std::shared_ptr<WaitingQueue> getWaitingQueue() { return waitingQueue; }
+    std::string getSchedulerType() const { return schedulerType; }
 
-    std::shared_ptr<WaitingQueue> getWaitingQueue()
-    {
-        return waitingQueue;
-    }
+    size_t getWaitingProcessCount() { return readyQueue->size(); }
+    bool isReadyQueueEmpty() { return readyQueue->empty(); }
 
-    /**
-     * Gets the scheduler type
-     */
-    std::string getSchedulerType() const
-    {
-        return schedulerType;
-    }
-
-    /**
-     * Gets the number of processes waiting in the ready queue
-     */
-    size_t getWaitingProcessCount()
-    {
-        return readyQueue->size();
-    }
-
-    /**
-     * Checks if ready queue is empty
-     */
-    bool isReadyQueueEmpty()
-    {
-        return readyQueue->empty();
-    }
-
-    /**
-     * Gets the current CPU tick count
-     * @return Current number of CPU ticks (scheduling cycles executed)
-     */
-    unsigned long long getCpuTicks() const
-    {
-        return cpuTicks.load();
-    }
+    unsigned long long getCpuTicks() const { return cpuTicks.load(); }
 
     /**
      * Resets the CPU tick counter to zero
@@ -171,20 +149,23 @@ public:
 private:
     void releaseSleepingProcesses()
     {
-        if (!waitingQueue) {
+        if (!waitingQueue)
+        {
             return;
         }
 
         auto readyProcesses = waitingQueue->advanceTicks();
-        for (auto& process : readyProcesses)
+        for (auto &process : readyProcesses)
         {
-            if (!process) {
+            if (!process)
+            {
                 continue;
             }
 
             process->wakeFromSleep();
 
-            if (!process->isFinished()) {
+            if (!process->isFinished())
+            {
                 readyQueue->enqueueProcess(process);
             }
         }
