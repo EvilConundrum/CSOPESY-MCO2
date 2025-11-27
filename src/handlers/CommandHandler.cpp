@@ -57,8 +57,18 @@ public:
                 break;
             }
 
-            if (args[1] == "-s" && args.size() >= 3)
-                screenMode = 1; // create screen
+                if (args[1] == "-s")
+                {
+                    if (args.size() >= 4)
+                    {
+                        screenMode = 1; // create screen with memory size
+                    }
+                    else
+                    {
+                        std::cout << "Usage: screen -s <name> <memory_bytes>" << std::endl;
+                        opcode = UNKNOWN;
+                    }
+                }
             else if (args[1] == "-r" && args.size() >= 3)
                 screenMode = 2; // view specific screen
             else if (args[1] == "-ls" && args.size() == 2)

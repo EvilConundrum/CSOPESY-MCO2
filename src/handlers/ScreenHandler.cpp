@@ -65,9 +65,15 @@ public:
      * Creates a new process screen (screen -s <name>)
      * Now uses GeneratorHandler to create the process!
      */
-    bool createScreen(const std::string& processName) {
+    bool createScreen(const std::string& processName, int memoryBytes) {
         if (processName.empty()) {
             std::cout << "Process name cannot be empty.\n";
+            return false;
+        }
+
+        if (!isValidMemorySize(memoryBytes)) {
+            std::cout << "invalid memory allocation" << std::endl;
+            std::cout << "Allowed sizes are powers of two between 64 and 65536 bytes." << std::endl;
             return false;
         }
 
@@ -86,6 +92,7 @@ public:
         }
 
         auto process = generator->generateProcessWithName(*config, processName);
+        process->setMemoryRequired(memoryBytes);
 
         {
             std::lock_guard<std::mutex> lock(processesMutex);
@@ -101,7 +108,8 @@ public:
         }
 
         std::cout << "Process " << processName << " created with "
-                  << process->getTotalInstructions() << " instructions.\n";
+                  << process->getTotalInstructions() << " instructions and "
+                  << memoryBytes << " bytes allocated.\n";
         return true;
     }
 
@@ -585,5 +593,12 @@ public:
             return true;
         }
         return false;
+    }
+
+    bool isValidMemorySize(int memoryBytes) const {
+        if (memoryBytes < 64 || memoryBytes > 65536) {
+            return false;
+        }
+        return (memoryBytes & (memoryBytes - 1)) == 0;
     }
 };
