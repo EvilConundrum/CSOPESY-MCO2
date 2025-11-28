@@ -5,6 +5,10 @@
 #include <atomic>
 #include "../model/Config.cpp"
 
+#ifndef DEBUG
+#define DEBUG true
+#endif
+
 enum Commands
 {
     EMPTY = -3,
@@ -17,7 +21,9 @@ enum Commands
     SCHEDULER_STOP,
     PROCESS_SMI,
     REPORT_UTIL,
-    FORCE_FLUSH, // forces flush to backing store (debug purposes)
+    // everything below this is for debug usage only
+    MEM_SNAPSHOT,
+    FORCE_FLUSH,
 };
 
 class CommandHandler
@@ -124,8 +130,12 @@ private:
             return PROCESS_SMI;
         else if (command == "report-util")
             return REPORT_UTIL;
+#ifdef DEBUG
+        else if (command == "mem-snapshot")
+            return MEM_SNAPSHOT;
         else if (command == "force-flush")
             return FORCE_FLUSH;
+#endif
         else
         {
             std::cout << "Unknown command: " << command << std::endl;

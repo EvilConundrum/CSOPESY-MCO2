@@ -130,8 +130,8 @@ private:
 
     Instruction generateRandomInstruction(std::unordered_set<std::string> &declaredVars, int numAllocatedPages, int pageSize)
     {
-        std::uniform_int_distribution<int> valueDist(0, 5);     // random int values
-        std::uniform_int_distribution<int> instrTypeDist(0, 5); // random instruction
+        std::uniform_int_distribution<int> valueDist(0, 10);    // random int values
+        std::uniform_int_distribution<int> instrTypeDist(0, 7); // random instruction
 
         Instruction instr;
 
@@ -163,13 +163,7 @@ private:
 
         case 7: // WRITE
         {
-            if (declaredVars.size() < 1)
-                return Instruction(); // Return unknown instruction to skip
-
-            std::vector<std::string> vars(declaredVars.begin(), declaredVars.end());
-            std::string var = vars[rng() % maxSymbolTable(vars.size())];
-            int val = valueDist(rng);
-            instr = Instruction("WRITE", {var, std::to_string(val)});
+            instr = createWriteInstruction(declaredVars, numAllocatedPages, pageSize);
             break;
         }
 
@@ -265,26 +259,30 @@ private:
         std::uniform_int_distribution<int> violationDist(1, 1024);
         bool causeViolation = (violationDist(rng) == 67);
 
-        // select from a valid page (or an arbitrary one if causing violation)
-        std::uniform_int_distribution<int> pageDist(0, numPages - 1);
-        int pageNumber = pageDist(rng);
+        if (declaredVars.size() < 1)
+            return Instruction(); // Return unknown instruction to skip
 
-        int numOffsetBits = 0;
-        int tempPageSize = pageSize;
-        while (tempPageSize > 1)
-        {
-            numOffsetBits++;
-            tempPageSize >>= 1;
-        }
+        // select from a valid address
+        std::uniform_int_distribution<int> pageDist(0, numPages * pageSize - 1);
+        uint16_t address = pageDist(rng) & 0xFFFE; // floor to even
 
         // add a random number to the last page index to go out of bounds
         if (causeViolation)
-            pageNumber = numPages + (rng() % 10) + 1; 
-
-        if (declaredVars.size() < 1)
-            return Instruction(); // Return unknown instruction to skip
+            address = numPages * pageSize + (rng() % (1 << 5)) * 2;
         std::vector<std::string> vars(declaredVars.begin(), declaredVars.end());
         std::string var = vars[rng() % maxSymbolTable(vars.size())];
-        return Instruction("READ", {var});
+        return Instruction("READ", {var, std::to_string(address)});
+    }
+
+    Instruction createWriteInstruction(const std::unordered_set<std::string> &declaredVars, int numPages, int pageSize)
+    {
+        if (declaredVars.size() < 1)
+            return Instruction(); // Return unknown instruction to skip
+
+        std::vector<std::string> vars(declaredVars.begin(), declaredVars.end());
+        std::string var = vars[rng() % maxSymbolTable(vars.size())];
+        std::uniform_int_distribution<int> valueDist(64, numPages * pageSize - 1); // first 64 addresses are reserved for variables
+        uint16_t val = valueDist(rng) & 0xFFFE;                                    // make it even
+        return Instruction("WRITE", {std::to_string(val), var});
     }
 };

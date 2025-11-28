@@ -178,7 +178,6 @@ public:
             process->addInstruction(instr);
         }
 
-        std::cout << "Registering process..." << std::endl;
         {
             std::lock_guard<std::mutex> lock(processesMutex);
             processes[processName] = process;
@@ -186,19 +185,18 @@ public:
 
         if (scheduleHandler)
         {
-            std::cout << "Adding process to scheduler..." << std::endl;
             scheduleHandler->addProcess(process);
         }
 
         if (reportHandler)
         {
-            std::cout << "Recording process start in report handler..." << std::endl;
             reportHandler->recordProcessStart(process);
         }
 
-        std::cout << "Process " << processName << " created with "
-                  << parsedInstructions.size() << " custom instructions." << std::endl
-                  << "Memory allocated: " << memorySize << " bytes (" << process->getNumPages() << " pages allocated)." << std::endl;
+        // this little string preconcatenation is to avoid multiple cout calls esp when im debugging methods in the other threads
+        std::string outString = "Process " + processName + " created with " + std::to_string(parsedInstructions.size()) + " custom instructions. \n Memory allocated: " + std::to_string(memorySize) + " bytes (" + std::to_string(process->getNumPages()) + " pages allocated).\n\n";
+        std::cout << outString;
+
         return true;
     }
 
