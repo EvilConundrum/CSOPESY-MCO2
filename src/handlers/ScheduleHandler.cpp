@@ -1,13 +1,14 @@
 #pragma once
+#include <vector>
+#include <memory>
+#include <atomic>
+#include <string>
+#include "../headers.h"
 #include "../model/CPU.cpp"
 #include "../model/readyqueue/FCFS.cpp"
 #include "../model/readyqueue/RoundRobin.cpp"
 #include "../model/WaitingQueue.cpp"
 #include "../model/memory/Memory.cpp"
-#include <vector>
-#include <memory>
-#include <atomic>
-#include <string>
 
 class ScheduleHandler
 {
@@ -117,6 +118,9 @@ public:
                 }
             }
         }
+
+        if (THROTTLE)
+            std::this_thread::sleep_for(std::chrono::milliseconds(THROTTLE_DELAY_MS));
     }
 
     /**

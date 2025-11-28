@@ -6,6 +6,7 @@
 #include <ctime>
 #include <thread>
 #include <atomic>
+#include "./headers.h"
 #include "model\Config.cpp"
 #include "model\CPU.cpp"
 #include "handlers\ScheduleHandler.cpp"
@@ -15,8 +16,6 @@
 #include "handlers\ReportHandler.cpp"
 #include "view\CLI.cpp"
 #include "view\misc.cpp"
-
-#define DEBUG true
 
 /**  TODO: TLDR there will be 2 threads:
  *   - Main thread: handles CLI input and command parsing
