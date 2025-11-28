@@ -158,8 +158,6 @@ private:
         if (it != vars.end())
         {
             VirtualAddress addr = getAddress(vars, token, memory->getPageSize());
-            // std::cout << "Translating virtual address: pageNumber=" << addr.pageNumber
-            //           << ", offset=" << addr.offset << std::endl;
             LogicalAddress logicalAddr = getLogicalAddress(memory, addr, allocatedAddresses);
             return memory->read(logicalAddr, currentTick);
         }
@@ -259,7 +257,12 @@ private:
 
         std::string var = args[0];
         uint16_t value = getValue(memory, vars, args[1], allocatedPages, currentTick);
-        vars[var] = vars.size() * 2;
+        vars[var] = vars.size() * 2; // assign address to first page or bytes 0 to 63
+
+        // write to memory
+        LogicalAddress addr = getLogicalAddress(memory, vars[var], allocatedPages); // always allocate to first page, offset 0
+        memory->write(addr, value, currentTick);
+
         std::string output = "[DECLARE] " + var + " = " + std::to_string(value);
         if (printToConsole)
             std::cout << output << std::endl;
