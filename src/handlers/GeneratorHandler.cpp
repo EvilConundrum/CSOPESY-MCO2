@@ -51,7 +51,7 @@ public:
         process->addPageNumbers(memory.get()->makePages(memoryRequired));
 
         // Track declared variables to avoid using undeclared ones
-        std::unordered_set<std::string> declaredVars;
+        std::vector<std::string> declaredVars;
 
         int i = 0;
         while (i < numInstructions)
@@ -83,7 +83,7 @@ public:
         process->addPageNumbers(memory->makePages(memoryRequired));
 
         // Track declared variables to avoid using undeclared ones
-        std::unordered_set<std::string> declaredVars;
+        std::vector<std::string> declaredVars;
 
         int i = 0;
         while (i < numInstructions)
@@ -125,10 +125,10 @@ private:
      */
     int maxSymbolTable(int current)
     {
-        return std::min(current, 32);
+        return (current > 32) ? 32 : current;
     }
 
-    Instruction generateRandomInstruction(std::unordered_set<std::string> &declaredVars, int numAllocatedPages, int pageSize)
+    Instruction generateRandomInstruction(std::vector<std::string> &declaredVars, int numAllocatedPages, int pageSize)
     {
         std::uniform_int_distribution<int> valueDist(0, 10);    // random int values
         std::uniform_int_distribution<int> instrTypeDist(0, 7); // random instruction
@@ -174,27 +174,26 @@ private:
         return instr;
     }
 
-    Instruction createDeclareInstruction(std::uniform_int_distribution<int> &valueDist, std::unordered_set<std::string> &declaredVars)
+    Instruction createDeclareInstruction(std::uniform_int_distribution<int> &valueDist, std::vector<std::string> &declaredVars)
     {
         std::string var = "v" + std::to_string(declaredVars.size() + 1);
         int val = valueDist(rng);
         Instruction instr = Instruction("DECLARE", {var, std::to_string(val)});
-        declaredVars.insert(var);
+        declaredVars.push_back(var);
         return instr;
     }
 
-    Instruction createAddInstruction(std::uniform_int_distribution<int> &valueDist, const std::unordered_set<std::string> &declaredVars)
+    Instruction createAddInstruction(std::uniform_int_distribution<int> &valueDist, const std::vector<std::string> &declaredVars)
     {
         if (declaredVars.size() < 1)
             return Instruction(); // Return unknown instruction to skip
-        std::vector<std::string> vars(declaredVars.begin(), declaredVars.end());
-        std::string dest = vars[rng() % maxSymbolTable(vars.size())];
-        std::string op1 = vars[rng() % maxSymbolTable(vars.size())];
+        std::string dest = declaredVars[rng() % maxSymbolTable(declaredVars.size())];
+        std::string op1 = declaredVars[rng() % maxSymbolTable(declaredVars.size())];
         std::string op2 = std::to_string(valueDist(rng));
         return Instruction("ADD", {dest, op1, op2});
     }
 
-    Instruction createSubtractInstruction(std::uniform_int_distribution<int> &valueDist, const std::unordered_set<std::string> &declaredVars)
+    Instruction createSubtractInstruction(std::uniform_int_distribution<int> &valueDist, const std::vector<std::string> &declaredVars)
     {
         if (declaredVars.size() < 1)
             return Instruction(); // Return unknown instruction to skip
@@ -205,7 +204,7 @@ private:
         return Instruction("SUBTRACT", {dest, op1, op2});
     }
 
-    Instruction createPrintInstruction(const std::unordered_set<std::string> &declaredVars)
+    Instruction createPrintInstruction(const std::vector<std::string> &declaredVars)
     {
         if (declaredVars.size() < 1)
             return Instruction("PRINT", {"\"Hello World\""});
@@ -222,7 +221,7 @@ private:
         return Instruction("SLEEP", {std::to_string(ticks)});
     }
 
-    Instruction createForInstruction(const std::unordered_set<std::string> &declaredVars)
+    Instruction createForInstruction(const std::vector<std::string> &declaredVars)
     {
         std::uniform_int_distribution<int> forCountDist(2, 5);
         int repeat = forCountDist(rng);
@@ -253,7 +252,7 @@ private:
         return instr;
     }
 
-    Instruction createReadInstruction(const std::unordered_set<std::string> &declaredVars, int numPages, int pageSize)
+    Instruction createReadInstruction(const std::vector<std::string> &declaredVars, int numPages, int pageSize)
     {
         // Randomly decide to cause a violation (1 in 1024 chance)
         std::uniform_int_distribution<int> violationDist(1, 1024);
@@ -274,13 +273,12 @@ private:
         return Instruction("READ", {var, std::to_string(address)});
     }
 
-    Instruction createWriteInstruction(const std::unordered_set<std::string> &declaredVars, int numPages, int pageSize)
+    Instruction createWriteInstruction(const std::vector<std::string> &declaredVars, int numPages, int pageSize)
     {
         if (declaredVars.size() < 1)
             return Instruction(); // Return unknown instruction to skip
 
-        std::vector<std::string> vars(declaredVars.begin(), declaredVars.end());
-        std::string var = vars[rng() % maxSymbolTable(vars.size())];
+        std::string var = declaredVars[rng() % maxSymbolTable(declaredVars.size())];
         std::uniform_int_distribution<int> valueDist(64, numPages * pageSize - 1); // first 64 addresses are reserved for variables
         uint16_t val = valueDist(rng) & 0xFFFE;                                    // make it even
         return Instruction("WRITE", {std::to_string(val), var});
