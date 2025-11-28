@@ -100,14 +100,17 @@ public:
     bool releasePage(int pageNumber)
     {
         int frameIndex = getFrameByPageNumber(pageNumber);
+
+        backingStore.freePage(pageNumber);
+
         if (frameIndex >= 0)
         {
-            Frame &frame = physicalMemory[frameIndex];
-            if (frame.isDirty())
-                backingStore.writeRow(frame);
-            frame.releaseMemory();
+            // if (physicalMemory[frameIndex].isDirty())
+            //     backingStore.writeRow(physicalMemory[frameIndex]);
+            physicalMemory[frameIndex].releaseMemory();
             return true;
         }
+
         return false;
     }
 

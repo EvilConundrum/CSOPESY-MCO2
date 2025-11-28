@@ -45,15 +45,6 @@ public:
      */
     std::shared_ptr<Process> executeNext(WaitingQueue *waitingQueue = nullptr, Memory *memory = nullptr, uint64_t currentTick = 0)
     {
-        if (this->currProcess != nullptr && !this->currProcess->hasInstructions())
-        {
-            if (this->currProcess->isFinished())
-            {
-                completeCurrentProcess();
-            }
-            return nullptr;
-        }
-
         if (this->currProcess != nullptr && this->currProcess->hasInstructions())
         {
             // Set process state to running
@@ -113,13 +104,13 @@ public:
             // Check if process is finished
             if (this->currProcess != nullptr && this->currProcess->isFinished())
             {
-                completeCurrentProcess();
+                completeCurrentProcess(memory);
             }
 
             // check if process was terminated due to memory violation
             if (this->currProcess != nullptr && this->currProcess->getState() == ProcessState::TERMINATED)
             {
-                completeCurrentProcess();
+                completeCurrentProcess(memory, true);
             }
         }
 
@@ -129,7 +120,8 @@ public:
     /**
      * Checks if there are remaining processes to execute
      */
-    bool hasRemainingProcesses() const
+    bool
+    hasRemainingProcesses() const
     {
         return this->currProcess != nullptr && this->currProcess->hasInstructions();
     }
@@ -218,11 +210,18 @@ public:
     }
 
 private:
-    void completeCurrentProcess(bool isTerminated = false)
+    void completeCurrentProcess(Memory *memory, bool isTerminated = false)
     {
         if (this->currProcess == nullptr)
         {
             return;
+        }
+
+        if (memory != nullptr)
+        {
+            std::vector<int> allocatedPages = this->currProcess->getPageNumbers();
+            for (int pageNumber : allocatedPages)
+                memory->releasePage(pageNumber);
         }
 
         ProcessState ps = isTerminated ? ProcessState::TERMINATED : ProcessState::FINISHED;
