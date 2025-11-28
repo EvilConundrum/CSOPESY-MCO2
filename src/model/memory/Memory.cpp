@@ -1,14 +1,11 @@
 #pragma once
+#include "../../headers.h"
 #include <vector>
 #include <cstdint>
 #include "../Config.cpp"
 #include "./BackingStore.cpp"
 #include "./Frame.cpp"
 #include "./Address.cpp"
-
-#ifndef DEBUG
-#define DEBUG true
-#endif
 
 /**
  * Memory management unit, handles page reads/writes and page faults

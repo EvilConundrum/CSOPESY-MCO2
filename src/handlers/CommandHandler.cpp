@@ -1,13 +1,10 @@
 #pragma once
+#include "../headers.h"
 #include <iostream>
 #include <vector>
 #include <string>
 #include <atomic>
 #include "../model/Config.cpp"
-
-#ifndef DEBUG
-#define DEBUG true
-#endif
 
 enum Commands
 {
