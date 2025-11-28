@@ -31,6 +31,7 @@ class GreggyOS
     std::thread cliThread;
     CommandLineInterface cli;
     Config *config;
+    std::shared_ptr<Memory> memory;
     std::shared_ptr<ScheduleHandler> scheduler;
     std::shared_ptr<GeneratorHandler> processGenerator;
     std::shared_ptr<ReportHandler> reportHandler;
@@ -51,15 +52,24 @@ public:
         this->lastBatchTick = 0;
 
         this->config = new Config(this->configFilePath);
+        this->reportHandler = std::make_shared<ReportHandler>(this->config);
         this->processGenerator = std::make_shared<GeneratorHandler>();
 
         // spawn threads
         this->schedulerThread = std::thread(&GreggyOS::schedulerLoop, this, std::ref(this->isRunning), std::ref(this->isInitialized));
         this->cliThread = std::thread(&GreggyOS::commandThread, this, std::ref(this->isRunning), std::ref(this->isInitialized));
-        this->reportHandler = std::make_shared<ReportHandler>(this->config);
+    }
 
-        this->schedulerThread.join();
-        this->cliThread.join();
+    ~GreggyOS()
+    {
+        if (schedulerThread.joinable())
+            schedulerThread.join();
+
+        this->cli.displayMessage("Goodbye!");
+        if (cliThread.joinable())
+            cliThread.join();
+
+        delete config;
     }
 
     void initializeConfig()
@@ -81,9 +91,15 @@ public:
             this->cli.displayMessage("");
             this->cli.displayMessage("Configuration loaded from config.txt");
 
+            // Initialize memory inside scheduler
+            this->memory = std::make_shared<Memory>(this->config, "backing_store.txt");
+
             this->scheduler = std::make_shared<ScheduleHandler>(
+                memory,
                 this->config->getSchedulerAlgorithm(),
-                this->config->getQuantumCycles());
+                this->config->getQuantumCycles(),
+                this->config,
+                "backing_store.txt");
 
             this->cli.displayMessage("Scheduler initialized with algorithm: " + this->config->getSchedulerAlgorithm() + " and quantum cycles: " + std::to_string(this->config->getQuantumCycles()));
 
@@ -95,8 +111,7 @@ public:
                 this->config,
                 this->processGenerator.get(),
                 this->scheduler.get(),
-                this->reportHandler.get()
-            );
+                this->reportHandler.get());
 
             // Link report handler with screen handler
             this->reportHandler->setScreenHandler(this->screenHandler.get());
@@ -154,7 +169,7 @@ public:
         // Check if it's time to generate a new process
         if (currentTick - lastBatchTick >= batchFreq)
         {
-            auto newProcess = processGenerator->generateProcess(*config);
+            auto newProcess = processGenerator->generateProcess(*config, memory);
             scheduler->addProcess(newProcess);
             if (screenHandler)
             {
@@ -217,7 +232,7 @@ public:
             this->cli.displayMessage("");
             std::vector<std::string> userInput = splitString(this->cli.getUserInput("C:\\GreggyOS"), ' ');
             commandHandler.parseCommand(userInput, isRunning, isInitialized, opcode, screenMode);
-            
+
             if (userInput.empty())
                 continue;
 
@@ -239,19 +254,20 @@ public:
                 isRunning = false;
                 this->cli.displayMessage("Exiting GreggyOS...");
                 break;
-            
+
             case SCHEDULER_START:
                 this->startScheduler();
                 break;
-            
+
             case SCHEDULER_STOP:
                 this->stopScheduler();
                 break;
-            
+
             case REPORT_UTIL:
                 if (screenHandler != nullptr)
                 {
-                    if (!screenHandler->writeScreenReport()) {
+                    if (!screenHandler->writeScreenReport())
+                    {
                         cli.displayMessage("Failed to generate utilization report.");
                     }
                 }
@@ -260,13 +276,14 @@ public:
                     cli.displayMessage("System not initialized. Cannot generate report.");
                 }
                 break;
-            
+
             case SCREEN:
             {
                 std::lock_guard<std::mutex> lock(screenMutex);
                 std::string screenName = "";
 
-                if (!screenHandler) {
+                if (!screenHandler)
+                {
                     cli.displayMessage("System not initialized. Cannot access screens.");
                     break;
                 }
@@ -293,13 +310,13 @@ public:
                         break;
                     }
 
-                    if (screenHandler->createScreen(screenName, memoryBytes))
+                    if (screenHandler->createScreen(screenName, memoryBytes, this->memory.get()))
                     {
                         this->cli.displayMessage("Process created. Use 'screen -r " + screenName + "' to attach.");
                     }
                     break;
                 }
-                    
+
                 case 2: // view specific screen (interactive mode)
                     if (userInput.size() < 3)
                     {
@@ -312,10 +329,10 @@ public:
                     break;
 
                 case 3: // list screens
-                    {
-                        screenHandler->displayScreenList();
-                    }
-                    break;
+                {
+                    screenHandler->displayScreenList();
+                }
+                break;
 
                 case 4: // custom instructions
                     if (userInput.size() < 5)
@@ -362,7 +379,7 @@ public:
                         break;
                     }
 
-                    if (screenHandler->createCustomProcess(screenName, memorySize, rawInstructions))
+                    if (screenHandler->createCustomProcess(screenName, memorySize, this->memory.get(), rawInstructions))
                     {
                         this->cli.displayMessage("Custom process created. Use 'screen -r " + screenName + "' to attach.");
                     }
@@ -374,7 +391,7 @@ public:
                 }
                 break; // Break from SCREEN case
             }
-            
+
             default:
                 break;
             }

@@ -42,19 +42,37 @@ public:
         for (auto &c : cmd)
             c = std::toupper(c);
 
-        if (cmd == "PRINT") type = InstructionType::PRINT;
-        else if (cmd == "DECLARE") type = InstructionType::DECLARE;
-        else if (cmd == "ADD") type = InstructionType::ADD;
-        else if (cmd == "SUBTRACT") type = InstructionType::SUBTRACT;
-        else if (cmd == "SLEEP") type = InstructionType::SLEEP;
-        else if (cmd == "FOR") type = InstructionType::FOR;
-        else if (cmd == "READ") type = InstructionType::READ;
-        else if (cmd == "WRITE") type = InstructionType::WRITE;
-        else type = InstructionType::UNKNOWN;
+        if (cmd == "PRINT")
+            type = InstructionType::PRINT;
+        else if (cmd == "DECLARE")
+            type = InstructionType::DECLARE;
+        else if (cmd == "ADD")
+            type = InstructionType::ADD;
+        else if (cmd == "SUBTRACT")
+            type = InstructionType::SUBTRACT;
+        else if (cmd == "SLEEP")
+            type = InstructionType::SLEEP;
+        else if (cmd == "FOR")
+            type = InstructionType::FOR;
+        else if (cmd == "READ")
+            type = InstructionType::READ;
+        else if (cmd == "WRITE")
+            type = InstructionType::WRITE;
+        else
+            type = InstructionType::UNKNOWN;
     }
 
     void setSubInstructions(const std::vector<Instruction> &subs) { subInstructions = subs; }
     InstructionType getType() const { return type; }
+    std::string getRaw() const {
+        // return the raw instruction as a string
+        std::ostringstream oss;
+        oss << command;
+        for (const auto &arg : args) {
+            oss << " " << arg;
+        }
+        return oss.str();
+    }
     std::string getCommand() const { return command; }
     std::vector<std::string> getArgs() const { return args; }
     int getLineNumber() const { return lineNumber; }
@@ -110,15 +128,15 @@ public:
 
 private:
     /**
-     * Given a variable name, returns its memory address from vars
+     * Given a variable name, returns its associated virtual address
      * returns UINT16_MAX if variable not found
      */
-    uint16_t getAddress(const std::unordered_map<std::string, uint16_t> &vars, const std::string &token) const
+    VirtualAddress getAddress(const std::unordered_map<std::string, uint16_t> &vars, const std::string &token, int pageSize) const
     {
         auto it = vars.find(token);
         if (it != vars.end())
-            return it->second;
-        return UINT16_MAX;
+            return parseVirtualAddress(it->second, pageSize);
+        return {UINT16_MAX, UINT16_MAX};
     }
 
     /**
@@ -131,13 +149,23 @@ private:
      */
     // TODO: verify for correctness
     uint16_t getValue(Memory *memory, const std::unordered_map<std::string, uint16_t> &vars,
-                      const std::string &token, uint64_t currentTick) const
+                      const std::string &token, std::vector<int> allocatedAddresses, uint64_t currentTick) const
     {
+        if (!memory)
+        {
+            std::cout << "[ERROR] Memory pointer is null in getValue()" << std::endl;
+            return 0;
+        }
+
         // check if token is a variable
         auto it = vars.find(token);
         if (it != vars.end())
         {
-            return memory->read(it->second, currentTick);
+            VirtualAddress addr = getAddress(vars, token, memory->getPageSize());
+            std::cout << "Translating virtual address: pageNumber=" << addr.pageNumber
+                      << ", offset=" << addr.offset << std::endl;
+            LogicalAddress logicalAddr = getLogicalAddress(memory, addr, allocatedAddresses);
+            return memory->read(logicalAddr, currentTick);
         }
 
         // try parsing as decimal integer
@@ -224,8 +252,8 @@ private:
         }
 
         std::string var = args[0];
-        uint16_t value = getValue(memory, vars, args[1], currentTick);
-        vars[var] = var.size() * 2;
+        uint16_t value = getValue(memory, vars, args[1], allocatedPages, currentTick);
+        vars[var] = vars.size() * 2;
         std::string output = "[DECLARE] " + var + " = " + std::to_string(value);
         if (printToConsole)
             std::cout << output << std::endl;
@@ -249,8 +277,8 @@ private:
             return;
         }
         std::string dest = args[0];
-        uint16_t a = getValue(memory, vars, args[1], currentTick);
-        uint16_t b = getValue(memory, vars, args[2], currentTick);
+        uint16_t a = getValue(memory, vars, args[1], allocatedPages, currentTick);
+        uint16_t b = getValue(memory, vars, args[2], allocatedPages, currentTick);
         uint32_t result = a + b;
         if (result > 65535)
             result = 65535;
@@ -278,8 +306,8 @@ private:
             return;
         }
         std::string dest = args[0];
-        uint16_t a = getValue(memory, vars, args[1], currentTick);
-        uint16_t b = getValue(memory, vars, args[2], currentTick);
+        uint16_t a = getValue(memory, vars, args[1], allocatedPages, currentTick);
+        uint16_t b = getValue(memory, vars, args[2], allocatedPages, currentTick);
         int32_t result = static_cast<int32_t>(a) - static_cast<int32_t>(b);
         if (result < 0)
             result = 0;
@@ -349,7 +377,7 @@ private:
         }
 
         // Use the last argument as repeat count
-        uint16_t repeatCount = getValue(memory, vars, args.back(), currentTick);
+        uint16_t repeatCount = getValue(memory, vars, args.back(), allocatedPages, currentTick);
 
         std::string header = "[FOR] Repeating " + std::to_string(repeatCount) + " times";
         if (printToConsole)
@@ -383,8 +411,8 @@ private:
             return 0;
         }
 
-        uint16_t dest = getAddress(vars, args[0]),
-                 src = getValue(memory, vars, args[1], currentTick);
+        VirtualAddress dest = getAddress(vars, args[0], memory->getPageSize());
+        uint16_t src = getValue(memory, vars, args[1], allocatedPages, currentTick);
 
         LogicalAddress destAddr = getLogicalAddress(memory, dest, allocatedPages);
         LogicalAddress srcAddr = getLogicalAddress(memory, src, allocatedPages);
@@ -402,7 +430,7 @@ private:
 
         uint16_t value = memory->read(srcAddr, currentTick);
         // write value to destination variable
-        memory->write(destAddr.pageNumber, destAddr.offset, value, currentTick);
+        memory->write(destAddr, value, currentTick);
 
         // log read
         std::string header = "[READ] Read value " + std::to_string(value) + " from address " + args[1] + " into variable " + args[0];
@@ -435,8 +463,8 @@ private:
             return 0;
         }
 
-        uint16_t dest = getValue(memory, vars, args[0], currentTick),
-                 src = getValue(memory, vars, args[1], currentTick);
+        uint16_t dest = getValue(memory, vars, args[0], allocatedPages, currentTick),
+                 src = getValue(memory, vars, args[1], allocatedPages, currentTick);
 
         LogicalAddress destAddr = getLogicalAddress(memory, dest, allocatedPages);
 
@@ -444,6 +472,12 @@ private:
         // returns -1 to indicate access violation
         if (destAddr.pageNumber == -1 || destAddr.offset == -1)
         {
+            // print all vars
+            for (const auto &[key, address] : vars)
+            {
+                std::cout << "[DEBUG] Variable: " << key << " = " << address << std::endl;
+            }
+
             std::string header = "[WRITE] Access violation at address " + args[0];
             if (printToConsole)
                 std::cerr << header << std::endl;
@@ -453,7 +487,7 @@ private:
         }
 
         // write to memory
-        memory->write(destAddr.pageNumber, destAddr.offset, src, currentTick);
+        memory->write(destAddr, src, currentTick);
 
         // log write
         std::string header = "[WRITE] Writing value " + std::to_string(src) + " to address " + args[0];
@@ -467,16 +501,38 @@ private:
     }
 
     /**
-     * resolves logical address
+     * translates the logical address to physical page number and offset using allocatedPages
      * returns converted LogicalAddress if found, returns {-1, -1} if access violation
      */
     LogicalAddress getLogicalAddress(Memory *memory, uint16_t address, std::vector<int> &allocatedPages) const
     {
-        LogicalAddress addr = parseLogicalAddress(address, memory->getPageSize());
-        int pageNumber = addr.pageNumber;
-        for (int allocatedPage : allocatedPages)
-            if (allocatedPage == pageNumber)
-                return addr;
-        return {-1, -1};
+        VirtualAddress virtualAddress = parseVirtualAddress(address, memory->getPageSize());
+
+        std::cout << "Translating virtual address: pageNumber=" << virtualAddress.pageNumber
+                  << ", offset=" << virtualAddress.offset << std::endl;
+
+        return getLogicalAddress(memory, virtualAddress, allocatedPages);
+    }
+
+    /**
+     * translates the logical address to physical page number and offset using allocatedPages
+     * returns converted LogicalAddress if found, returns {-1, -1} if access violation
+     */
+    LogicalAddress getLogicalAddress(Memory *memory, VirtualAddress virtualAddress, std::vector<int> &allocatedPages) const
+    {
+        int pageNumber = virtualAddress.pageNumber;
+        // if page number is outside of the allocated pages, access violation
+        int numPages = static_cast<int>(allocatedPages.size());
+        if (pageNumber < 0 || pageNumber >= numPages)
+        {
+            std::cout << "[ERROR] Access violation: page number " << pageNumber
+                      << " is outside allocated pages (0 to " << (numPages - 1) << ")" << std::endl;
+            return {-1, -1};
+        }
+
+        // if valid, return the translated physical address
+        return {allocatedPages[pageNumber], virtualAddress.offset};
     }
 };
+
+// screen -c process2 16384 "DECLARE varA 10; DECLARE varB 5; ADD varA varA varB; WRITE 0x100 varA; READ varB 0x100; PRINT(\"Result: \" + varB)"

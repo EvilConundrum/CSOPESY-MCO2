@@ -57,6 +57,11 @@ public:
         return instructions;
     }
 
+    const std::vector<std::string> &getLines() const
+    {
+        return lines;
+    }
+
 private:
     void splitLines(const std::string &input)
     {

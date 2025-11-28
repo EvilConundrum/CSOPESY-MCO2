@@ -71,6 +71,9 @@ public:
             this->addPageNumber(pageNumber);
     }
 
+    std::vector<int> getPageNumbers() { return allocatedPages; }
+    int getNumPages() const { return static_cast<int>(allocatedPages.size()); }
+
     /**
      * Adds an instruction to the process
      */
@@ -112,13 +115,13 @@ public:
             // Special case: terminate process immediately
             this->state = ProcessState::TERMINATED;
             this->endTime = std::chrono::system_clock::now();
-            
-            // we wont add what the attempted address was as it 
+
+            // we wont add what the attempted address was as it
             // should have been indicated in the previous line.
             std::string terminateLog = "[TERMINATE] Process " + PID + " terminated due to memory access violation at " + this->getEndTimeStr() + ".";
             this->addLog(terminateLog);
 
-            return false;
+            return true;
         }
         else
         {
