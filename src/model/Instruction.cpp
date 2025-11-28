@@ -212,13 +212,16 @@ private:
             auto it = vars.find(token);
             if (it != vars.end())
             {
-                msg << it->second;
+                msg << getValue(memory, vars, token, allocatedPages, currentTick);
             }
             else
             {
                 std::string out = token;
-                if (out.size() >= 2 && out.front() == '"' && out.back() == '"')
-                    out = out.substr(1, out.size() - 2);
+                // check if token starts with substring \" and ends with \"
+                if (out.rfind("\\\"", 0) == 0 && out.rfind("\\\"") == out.length() - 2)
+                {
+                    out = out.substr(2, out.length() - 4); // remove quotes
+                }
                 msg << out;
             }
         }
@@ -291,7 +294,10 @@ private:
         uint32_t result = a + b;
         if (result > 65535)
             result = 65535;
-        vars[dest] = static_cast<uint16_t>(result);
+
+        LogicalAddress addr = getLogicalAddress(memory, vars[dest], allocatedPages); // always allocate to first page, offset 0
+        memory->write(addr, static_cast<uint16_t>(result), currentTick);
+
         std::string output = "[ADD] " + dest + " = " + std::to_string(a) + " + " + std::to_string(b) + " = " + std::to_string(result);
         if (printToConsole)
             std::cout << output << std::endl;
