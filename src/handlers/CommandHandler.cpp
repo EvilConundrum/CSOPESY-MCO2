@@ -17,6 +17,7 @@ enum Commands
     SCHEDULER_STOP,
     PROCESS_SMI,
     REPORT_UTIL,
+    FORCE_FLUSH, // forces flush to backing store (debug purposes)
 };
 
 class CommandHandler
@@ -57,24 +58,32 @@ public:
                 break;
             }
 
-                if (args[1] == "-s")
+            if (args[1] == "-s")
+            {
+                if (args.size() >= 4)
                 {
-                    if (args.size() >= 4)
-                    {
-                        screenMode = 1; // create screen with memory size
-                    }
-                    else
-                    {
-                        std::cout << "Usage: screen -s <name> <memory_bytes>" << std::endl;
-                        opcode = UNKNOWN;
-                    }
+                    screenMode = 1; // create screen with memory size
                 }
+                else
+                {
+                    std::cout << "Usage: screen -s <name> <memory_bytes>" << std::endl;
+                    opcode = UNKNOWN;
+                }
+            }
             else if (args[1] == "-r" && args.size() >= 3)
                 screenMode = 2; // view specific screen
             else if (args[1] == "-ls" && args.size() == 2)
                 screenMode = 3; // list screens
-            else if (args[1] == "-c" && args.size() >= 5)
-                screenMode = 4; // custom instructions
+            else if (args[1] == "-c")
+            {
+                if (args.size() < 5)
+                {
+                    std::cout << "Usage: screen -c <name> <memory_size> \"<instructions>\"" << std::endl;
+                    opcode = UNKNOWN;
+                }
+                else
+                    screenMode = 4; // custom instructions
+            }
             else
             {
                 std::cout << "Unknown screen option: " << args[1] << std::endl;
@@ -103,7 +112,7 @@ private:
     {
         if (command == "initialize" || command == "init")
             return INITIALIZE;
-        else if (command == "exit" || command == "quit")
+        else if (command == "quit")
             return EXIT;
         else if (command == "screen")
             return SCREEN;
@@ -115,6 +124,8 @@ private:
             return PROCESS_SMI;
         else if (command == "report-util")
             return REPORT_UTIL;
+        else if (command == "force-flush")
+            return FORCE_FLUSH;
         else
         {
             std::cout << "Unknown command: " << command << std::endl;

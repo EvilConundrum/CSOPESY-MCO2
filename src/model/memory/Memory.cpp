@@ -4,7 +4,7 @@
 #include "../Config.cpp"
 #include "./BackingStore.cpp"
 #include "./Frame.cpp"
-#include "../model/memory/LogicalAddress.cpp"
+#include "./Address.cpp"
 /**
  * Memory management unit, handles page reads/writes and page faults
  */
@@ -41,24 +41,44 @@ public:
             frame.releaseMemory();
     }
 
+    void init()
+    {
+        // print if config is null or not
+        std::cout << "Initializing Memory with config: " << (config ? "valid" : "null") << std::endl;
+
+
+        this->numFrames = this->getNumFrames(*config);
+        this->physicalMemory = std::vector<Frame>();
+
+        for (int i = 0; i < this->numFrames; i++)
+        {
+            Frame newFrame(i, config->getMemPerFrame());
+            this->physicalMemory.push_back(newFrame);
+        }
+    }
+
     uint16_t getPageSize() { return this->pageSize; }
 
     /**
      * Write data to a frame at given offset
      * Returns true if write was successful, false if page fault occurred
      */
-    void write(int pageNumber, int offset, const uint16_t &data, uint64_t currentTick)
+    void write(LogicalAddress address, const uint16_t &data, uint64_t currentTick)
     {
         // check if page is in memory
 
-        int frameIndex = handlePageFault(pageNumber, currentTick);
+        int frameIndex = handlePageFault(address.pageNumber, currentTick);
         if (frameIndex >= 0)
         {
             Frame &frame = physicalMemory[frameIndex];
-            frame.writeData(offset, data, currentTick);
+            frame.writeData(address.offset, data, currentTick);
         }
     }
 
+    /**
+     * Reads data from a frame at given offset
+     * Handles page faults if page is not in memory
+     */
     uint16_t read(LogicalAddress address, uint64_t currentTick)
     {
         int frameIndex = handlePageFault(address.pageNumber, currentTick);
@@ -69,11 +89,6 @@ public:
         }
 
         return 0; // should not reach here
-    }
-
-    uint16_t read(int address, uint64_t currentTick)
-    {
-        return read({address / pageSize, address % pageSize}, currentTick);
     }
 
     /**
@@ -135,18 +150,6 @@ public:
     uint64_t getNumFaults() const { return num_faults; }
 
 private:
-    void init()
-    {
-        this->numFrames = this->getNumFrames(*config);
-        this->physicalMemory = std::vector<Frame>();
-
-        for (int i = 0; i < this->numFrames; i++)
-        {
-            Frame newFrame(i, config->getMemPerFrame());
-            this->physicalMemory.push_back(newFrame);
-        }
-    }
-
     int getNumFrames(const Config &config)
     {
         return config.getMaxOverallMem() / config.getMemPerFrame();

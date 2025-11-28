@@ -27,7 +27,7 @@ public:
      * Generates a new process with random instructions based on config
      * Process naming follows spec: p01, p02, ..., p1240
      */
-    std::shared_ptr<Process> generateProcess(const Config &config)
+    std::shared_ptr<Process> generateProcess(const Config &config, std::shared_ptr<Memory> memory)
     {
         // Generate process name with proper formatting (p01, p02, etc.)
         processCounter++;
@@ -39,111 +39,26 @@ public:
         std::uniform_int_distribution<int> distInstr(config.getMinInstructions(), config.getMaxInstructions());
         int numInstructions = distInstr(rng);
 
+        // determine amount of memory to be allocated to this process
+
+        std::uniform_int_distribution<int> distMem(config.getMinMemPerProc(), config.getMaxMemPerProc());
+        int memoryRequired = distMem(rng);
+
         // Create process
-        auto process = std::make_shared<Process>(processName, numInstructions);
+        auto process = std::make_shared<Process>(processName, numInstructions, memoryRequired);
+
+        // Allocate memory pages
+        process->addPageNumbers(memory.get()->makePages(memoryRequired));
 
         // Track declared variables to avoid using undeclared ones
         std::unordered_set<std::string> declaredVars;
-        std::uniform_int_distribution<int> valueDist(1, 100);   // random int values
-        std::uniform_int_distribution<int> instrTypeDist(0, 5); // random instruction type
+
         int i = 0;
         while (i < numInstructions)
         {
-            Instruction instr;
-
-            int type = instrTypeDist(rng);
-            switch (type)
-            {
-            case 0: // DECLARE
-            {
-                std::string var = "v" + std::to_string(declaredVars.size() + 1);
-                int val = valueDist(rng);
-                instr = Instruction("DECLARE", {var, std::to_string(val)});
-                declaredVars.insert(var);
-                break;
-            }
-
-            case 1: // ADD
-            {
-                if (declaredVars.size() < 1)
-                    continue; // skip if no vars yet
-                std::vector<std::string> vars(declaredVars.begin(), declaredVars.end());
-                std::string dest = vars[rng() % vars.size()];
-                std::string op1 = vars[rng() % vars.size()];
-                std::string op2 = std::to_string(valueDist(rng));
-                instr = Instruction("ADD", {dest, op1, op2});
-                break;
-            }
-
-            case 2: // SUBTRACT
-            {
-                if (declaredVars.size() < 1)
-                    continue;
-                std::vector<std::string> vars(declaredVars.begin(), declaredVars.end());
-                std::string dest = vars[rng() % vars.size()];
-                std::string op1 = vars[rng() % vars.size()];
-                std::string op2 = std::to_string(valueDist(rng));
-                instr = Instruction("SUBTRACT", {dest, op1, op2});
-                break;
-            }
-
-            case 3: // PRINT
-            {
-                if (!declaredVars.empty())
-                {
-                    std::vector<std::string> vars(declaredVars.begin(), declaredVars.end());
-                    std::string var = vars[rng() % vars.size()];
-                    instr = Instruction("PRINT", {"\"Value of\"", "+", var});
-                }
-                else
-                {
-                    instr = Instruction("PRINT", {"\"Hello World!\""});
-                }
-                break;
-            }
-
-            case 4: // SLEEP
-            {
-                std::uniform_int_distribution<int> sleepDist(1, 50);
-                int ticks = sleepDist(rng);
-                instr = Instruction("SLEEP", {std::to_string(ticks)});
-                break;
-            }
-
-            case 5: // FOR
-            {
-                // Create a mini block of subinstructions
-                std::uniform_int_distribution<int> forCountDist(2, 5);
-                int repeat = forCountDist(rng);
-
-                std::vector<Instruction> subInstrs;
-                int subCount = 2 + (rng() % 3); // 2–4 subinstructions
-
-                for (int j = 0; j < subCount; j++)
-                {
-                    std::uniform_int_distribution<int> subTypeDist(0, 2);
-                    int subType = subTypeDist(rng);
-
-                    if (subType == 0)
-                        subInstrs.push_back(Instruction("PRINT", {"\"Inside loop\"", "+", "\"iteration\""}));
-                    else if (subType == 1 && !declaredVars.empty())
-                    {
-                        std::vector<std::string> vars(declaredVars.begin(), declaredVars.end());
-                        std::string var = vars[rng() % vars.size()];
-                        subInstrs.push_back(Instruction("ADD", {var, var, "1"}));
-                    }
-                    else
-                        subInstrs.push_back(Instruction("SLEEP", {"5"}));
-                }
-
-                instr = Instruction("FOR", {std::to_string(repeat)});
-                instr.setSubInstructions(subInstrs);
-                break;
-            }
-
-            default:
-                instr = Instruction("PRINT", {"\"Unhandled instruction type\" " + processName + " " + std::to_string(i)});
-            }
+            Instruction instr = generateRandomInstruction(declaredVars, process->getNumPages(), config.getMemPerFrame());
+            if (instr.getType() == InstructionType::UNKNOWN)
+                continue;
 
             process->addInstruction(instr);
             ++i;
@@ -153,16 +68,37 @@ public:
     }
 
     /**
-     * Generates a batch of processes
+     * Generates a process with a specific name
      */
-    std::vector<std::shared_ptr<Process>> generateBatch(const Config &config, int batchSize)
+    std::shared_ptr<Process> generateProcessWithName(const Config &config, const std::string &customName, Memory *memory, int memoryRequired)
     {
-        std::vector<std::shared_ptr<Process>> processes;
-        for (int i = 0; i < batchSize; i++)
+        int numInstructions = std::uniform_int_distribution<int>(
+            config.getMinInstructions(),
+            config.getMaxInstructions())(rng);
+
+        // Create process with custom name
+        auto process = std::make_shared<Process>(customName, numInstructions, memoryRequired);
+
+        // Allocate memory pages
+        process->addPageNumbers(memory->makePages(memoryRequired));
+
+        // Track declared variables to avoid using undeclared ones
+        std::unordered_set<std::string> declaredVars;
+
+        int i = 0;
+        while (i < numInstructions)
         {
-            processes.push_back(generateProcess(config));
+            Instruction instr = generateRandomInstruction(declaredVars, process->getNumPages(), config.getMemPerFrame());
+
+            if (instr.getType() == InstructionType::UNKNOWN)
+                continue;
+
+            process->addInstruction(instr);
+            i++;
         }
-        return processes;
+
+        process->setState(ProcessState::READY);
+        return process;
     }
 
     /**
@@ -181,127 +117,174 @@ public:
         return processCounter;
     }
 
+private:
     /**
-     * Generates a process with a specific name
+     * Helper to ensure that variable access only reads
+     * the first 32 variables as defined by the limit of the symbol table
+     * Every other variable declared after that is ignored when interpreted
      */
-    std::shared_ptr<Process> generateProcessWithName(const Config &config, const std::string &customName)
+    int maxSymbolTable(int current)
     {
-        int numInstructions = std::uniform_int_distribution<int>(
-            config.getMinInstructions(),
-            config.getMaxInstructions())(rng);
+        return std::min(current, 32);
+    }
 
-        // Create process with custom name
-        auto process = std::make_shared<Process>(customName, numInstructions);
+    Instruction generateRandomInstruction(std::unordered_set<std::string> &declaredVars, int numAllocatedPages, int pageSize)
+    {
+        std::uniform_int_distribution<int> valueDist(0, 5);     // random int values
+        std::uniform_int_distribution<int> instrTypeDist(0, 5); // random instruction
 
-        // Track declared variables to avoid using undeclared ones
-        std::unordered_set<std::string> declaredVars;
-        std::uniform_int_distribution<int> valueDist(1, 100);
-        std::uniform_int_distribution<int> instrTypeDist(0, 5);
+        Instruction instr;
 
-        int i = 0;
-        while (i < numInstructions)
+        int type = instrTypeDist(rng);
+        switch (type)
         {
-            Instruction instr;
+        case 0: // DECLARE
+            instr = createDeclareInstruction(valueDist, declaredVars);
+            break;
+        case 1: // ADD
+            instr = createAddInstruction(valueDist, declaredVars);
+            break;
+        case 2: // SUBTRACT
+            instr = createSubtractInstruction(valueDist, declaredVars);
+            break;
+        case 3: // PRINT
+            instr = createPrintInstruction(declaredVars);
+            break;
+        case 4: // SLEEP
+            instr = createSleepInstruction(valueDist);
+            break;
+        case 5: // FOR
+            instr = createForInstruction(declaredVars);
+            break;
 
-            int type = instrTypeDist(rng);
-            switch (type)
-            {
-            case 0: // DECLARE
-            {
-                std::string var = "v" + std::to_string(declaredVars.size() + 1);
-                int val = valueDist(rng);
-                instr = Instruction("DECLARE", {var, std::to_string(val)});
-                declaredVars.insert(var);
-                break;
-            }
+        case 6: // READ
+            instr = createReadInstruction(declaredVars, numAllocatedPages, pageSize);
+            break;
 
-            case 1: // ADD
-            {
-                if (declaredVars.size() < 1)
-                    continue;
-                std::vector<std::string> vars(declaredVars.begin(), declaredVars.end());
-                std::string dest = vars[rng() % vars.size()];
-                std::string op1 = vars[rng() % vars.size()];
-                std::string op2 = std::to_string(valueDist(rng));
-                instr = Instruction("ADD", {dest, op1, op2});
-                break;
-            }
+        case 7: // WRITE
+        {
+            if (declaredVars.size() < 1)
+                return Instruction(); // Return unknown instruction to skip
 
-            case 2: // SUBTRACT
-            {
-                if (declaredVars.size() < 1)
-                    continue;
-                std::vector<std::string> vars(declaredVars.begin(), declaredVars.end());
-                std::string dest = vars[rng() % vars.size()];
-                std::string op1 = vars[rng() % vars.size()];
-                std::string op2 = std::to_string(valueDist(rng));
-                instr = Instruction("SUBTRACT", {dest, op1, op2});
-                break;
-            }
-
-            case 3: // PRINT
-            {
-                if (!declaredVars.empty())
-                {
-                    std::vector<std::string> vars(declaredVars.begin(), declaredVars.end());
-                    std::string var = vars[rng() % vars.size()];
-                    instr = Instruction("PRINT", {"\"Value of\"", "+", var});
-                }
-                else
-                {
-                    instr = Instruction("PRINT", {"\"Hello World!\""});
-                }
-                break;
-            }
-
-            case 4: // SLEEP
-            {
-                std::uniform_int_distribution<int> sleepDist(1, 50);
-                int ticks = sleepDist(rng);
-                instr = Instruction("SLEEP", {std::to_string(ticks)});
-                break;
-            }
-
-            case 5: // FOR
-            {
-                std::uniform_int_distribution<int> forCountDist(2, 5);
-                int repeat = forCountDist(rng);
-
-                std::vector<Instruction> subInstrs;
-                int subCount = 2 + (rng() % 3);
-
-                for (int j = 0; j < subCount; j++)
-                {
-                    std::uniform_int_distribution<int> subTypeDist(0, 2);
-                    int subType = subTypeDist(rng);
-
-                    if (subType == 0)
-                        subInstrs.push_back(Instruction("PRINT", {"\"Inside loop\"", "+", "\"iteration\""}));
-                    else if (subType == 1 && !declaredVars.empty())
-                    {
-                        std::vector<std::string> vars(declaredVars.begin(), declaredVars.end());
-                        std::string var = vars[rng() % vars.size()];
-                        subInstrs.push_back(Instruction("ADD", {var, var, "1"}));
-                    }
-                    else
-                        subInstrs.push_back(Instruction("SLEEP", {"5"}));
-                }
-
-                instr = Instruction("FOR", {std::to_string(repeat)});
-                instr.setSubInstructions(subInstrs);
-                break;
-            }
-
-            default:
-                instr = Instruction("PRINT", {"\"Unhandled instruction type\""});
-                break;
-            }
-
-            process->addInstruction(instr);
-            i++;
+            std::vector<std::string> vars(declaredVars.begin(), declaredVars.end());
+            std::string var = vars[rng() % maxSymbolTable(vars.size())];
+            int val = valueDist(rng);
+            instr = Instruction("WRITE", {var, std::to_string(val)});
+            break;
         }
 
-        process->setState(ProcessState::READY);
-        return process;
+        default:
+            instr = Instruction("PRINT", {"\"Unhandled instruction type\""});
+            break;
+        }
+        return instr;
+    }
+
+    Instruction createDeclareInstruction(std::uniform_int_distribution<int> &valueDist, std::unordered_set<std::string> &declaredVars)
+    {
+        std::string var = "v" + std::to_string(declaredVars.size() + 1);
+        int val = valueDist(rng);
+        Instruction instr = Instruction("DECLARE", {var, std::to_string(val)});
+        declaredVars.insert(var);
+        return instr;
+    }
+
+    Instruction createAddInstruction(std::uniform_int_distribution<int> &valueDist, const std::unordered_set<std::string> &declaredVars)
+    {
+        if (declaredVars.size() < 1)
+            return Instruction(); // Return unknown instruction to skip
+        std::vector<std::string> vars(declaredVars.begin(), declaredVars.end());
+        std::string dest = vars[rng() % maxSymbolTable(vars.size())];
+        std::string op1 = vars[rng() % maxSymbolTable(vars.size())];
+        std::string op2 = std::to_string(valueDist(rng));
+        return Instruction("ADD", {dest, op1, op2});
+    }
+
+    Instruction createSubtractInstruction(std::uniform_int_distribution<int> &valueDist, const std::unordered_set<std::string> &declaredVars)
+    {
+        if (declaredVars.size() < 1)
+            return Instruction(); // Return unknown instruction to skip
+        std::vector<std::string> vars(declaredVars.begin(), declaredVars.end());
+        std::string dest = vars[rng() % maxSymbolTable(vars.size())];
+        std::string op1 = vars[rng() % maxSymbolTable(vars.size())];
+        std::string op2 = std::to_string(valueDist(rng));
+        return Instruction("SUBTRACT", {dest, op1, op2});
+    }
+
+    Instruction createPrintInstruction(const std::unordered_set<std::string> &declaredVars)
+    {
+        if (declaredVars.size() < 1)
+            return Instruction("PRINT", {"\"Hello World\""});
+
+        std::vector<std::string> vars(declaredVars.begin(), declaredVars.end());
+        std::string var = vars[rng() % maxSymbolTable(vars.size())];
+        return Instruction("PRINT", {"\"Value of\"", "+", var});
+    }
+
+    Instruction createSleepInstruction(std::uniform_int_distribution<int> &valueDist)
+    {
+        std::uniform_int_distribution<int> sleepDist(1, 50);
+        int ticks = sleepDist(rng);
+        return Instruction("SLEEP", {std::to_string(ticks)});
+    }
+
+    Instruction createForInstruction(const std::unordered_set<std::string> &declaredVars)
+    {
+        std::uniform_int_distribution<int> forCountDist(2, 5);
+        int repeat = forCountDist(rng);
+
+        std::vector<Instruction> subInstrs;
+        int subCount = 2 + (rng() % 3);
+
+        for (int j = 0; j < subCount; j++)
+        {
+            std::uniform_int_distribution<int> subTypeDist(0, 2);
+            int subType = subTypeDist(rng);
+
+            if (subType == 0)
+                subInstrs.push_back(Instruction("PRINT", {"\"Inside loop\"", "+", "\"iteration\""}));
+            else if (subType == 1 && !declaredVars.empty())
+            {
+                std::vector<std::string> vars(declaredVars.begin(), declaredVars.end());
+                std::string var = vars[rng() % maxSymbolTable(vars.size())];
+                subInstrs.push_back(Instruction("ADD", {var, var, "1"}));
+            }
+            else
+                subInstrs.push_back(Instruction("SLEEP", {"5"}));
+        }
+
+        Instruction instr = Instruction("FOR", {std::to_string(repeat)});
+        instr.setSubInstructions(subInstrs);
+
+        return instr;
+    }
+
+    Instruction createReadInstruction(const std::unordered_set<std::string> &declaredVars, int numPages, int pageSize)
+    {
+        // Randomly decide to cause a violation (1 in 1024 chance)
+        std::uniform_int_distribution<int> violationDist(1, 1024);
+        bool causeViolation = (violationDist(rng) == 67);
+
+        // select from a valid page (or an arbitrary one if causing violation)
+        std::uniform_int_distribution<int> pageDist(0, numPages - 1);
+        int pageNumber = pageDist(rng);
+
+        int numOffsetBits = 0;
+        int tempPageSize = pageSize;
+        while (tempPageSize > 1)
+        {
+            numOffsetBits++;
+            tempPageSize >>= 1;
+        }
+
+        // add a random number to the last page index to go out of bounds
+        if (causeViolation)
+            pageNumber = numPages + (rng() % 10) + 1; 
+
+        if (declaredVars.size() < 1)
+            return Instruction(); // Return unknown instruction to skip
+        std::vector<std::string> vars(declaredVars.begin(), declaredVars.end());
+        std::string var = vars[rng() % maxSymbolTable(vars.size())];
+        return Instruction("READ", {var});
     }
 };

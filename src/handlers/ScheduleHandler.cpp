@@ -19,12 +19,15 @@ private:
     std::shared_ptr<Memory> memory;
 
 public:
-    ScheduleHandler(const std::string &schedulerType, int timeQuantum = 5, Config *config = nullptr, const std::string &backingStoreFilename = "backing_store.txt")
-        : schedulerType(schedulerType)
+    ScheduleHandler(std::shared_ptr<Memory> memoryPtr,
+                    const std::string &schedulerType,
+                    int timeQuantum,
+                    Config *config,
+                    const std::string &backingStoreFilename = "backing_store.txt")
+        : schedulerType(schedulerType), memory(memoryPtr)
     {
         this->cpuTicks = 0;
         this->waitingQueue = std::make_shared<WaitingQueue>();
-        this->memory = std::make_shared<Memory>(config, backingStoreFilename);
 
         // Initialize the appropriate scheduler
         if (schedulerType == "fcfs")
