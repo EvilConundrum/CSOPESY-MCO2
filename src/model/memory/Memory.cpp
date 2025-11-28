@@ -46,7 +46,6 @@ public:
         // print if config is null or not
         std::cout << "Initializing Memory with config: " << (config ? "valid" : "null") << std::endl;
 
-
         this->numFrames = this->getNumFrames(*config);
         this->physicalMemory = std::vector<Frame>();
 
@@ -137,6 +136,46 @@ public:
 
         // free from backing store
         this->backingStore.freePage(pageNumber);
+    }
+
+    std::string getMemoryState() const
+    {
+        std::string result;
+        for (const auto &frame : physicalMemory)
+        {
+            result += "Frame " + std::to_string(frame.getFrameNumber()) + ": ";
+            if (frame.isValid())
+            {
+                result += "Page " + std::to_string(frame.getPageNumber()) + ", Last Access Tick: " + std::to_string(frame.getLastAccessTick()) + "\n";
+            }
+            else
+            {
+                result += "Free\n";
+            }
+        }
+        return result;
+    }
+
+    std::string getMemorySnapshot() const
+    {
+        std::string result;
+        for (const auto &frame : physicalMemory)
+        {
+            result += "Frame " + std::to_string(frame.getFrameNumber()) + " Page: " + (frame.isValid() ? std::to_string(frame.getPageNumber()) : "Free") + " Data: ";
+            result += frame.getFrameAsString() + "\n";
+        }
+        return result;
+    }
+
+    bool flushAllPagesToBackingStore()
+    {
+        for (auto &frame : physicalMemory)
+        {
+            if (frame.isValid() && frame.isDirty())
+                if (!backingStore.writeRow(frame))
+                    return false;
+        }
+        return true;
     }
 
     // extra functions for vmstat and debugging

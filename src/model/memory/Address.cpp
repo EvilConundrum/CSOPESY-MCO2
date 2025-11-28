@@ -5,6 +5,9 @@ typedef struct Address
 {
     int pageNumber; // virtual page number (physical needs to be translated using allocatedPages)
     int offset;     // offset within the page (virtual and physical share the same offset)
+    std::string str() {
+        return "[" + std::to_string(pageNumber) + ", " + std::to_string(offset) + "]";
+    };
 } Address;
 
 // Inheritance approach

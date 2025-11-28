@@ -64,11 +64,13 @@ public:
 
     void setSubInstructions(const std::vector<Instruction> &subs) { subInstructions = subs; }
     InstructionType getType() const { return type; }
-    std::string getRaw() const {
+    std::string getRaw() const
+    {
         // return the raw instruction as a string
         std::ostringstream oss;
         oss << command;
-        for (const auto &arg : args) {
+        for (const auto &arg : args)
+        {
             oss << " " << arg;
         }
         return oss.str();
@@ -151,44 +153,48 @@ private:
     uint16_t getValue(Memory *memory, const std::unordered_map<std::string, uint16_t> &vars,
                       const std::string &token, std::vector<int> allocatedAddresses, uint64_t currentTick) const
     {
-        if (!memory)
-        {
-            std::cout << "[ERROR] Memory pointer is null in getValue()" << std::endl;
-            return 0;
-        }
-
         // check if token is a variable
         auto it = vars.find(token);
         if (it != vars.end())
         {
             VirtualAddress addr = getAddress(vars, token, memory->getPageSize());
-            std::cout << "Translating virtual address: pageNumber=" << addr.pageNumber
-                      << ", offset=" << addr.offset << std::endl;
+            // std::cout << "Translating virtual address: pageNumber=" << addr.pageNumber
+            //           << ", offset=" << addr.offset << std::endl;
             LogicalAddress logicalAddr = getLogicalAddress(memory, addr, allocatedAddresses);
             return memory->read(logicalAddr, currentTick);
         }
 
-        // try parsing as decimal integer
-        try
-        {
-            int val = std::stoi(token);
-            // clamp to uint16_t range
-            val = (val < 0) ? 0 : val;
-            val = (val > 65535) ? 65535 : val;
-            return static_cast<uint16_t>(val);
-        }
-        catch (...)
-        {
-        }
+        bool isHex = token.rfind("0x", 0) == 0 || token.rfind("0X", 0) == 0;
 
-        // try parsing as hexadecimal integer
-        try
+        if (isHex)
         {
-            uint16_t val = convHexToUint16(token);
-            return val;
+            // try parsing as hexadecimal integer
+            try
+            {
+                uint16_t val = convHexToUint16(token);
+                return val;
+            }
+            catch (...)
+            {
+                std::cout << "Failed to convert " << token << " to hex." << std::endl;
+            }
         }
-        catch (...)
+        else
         {
+
+            // try parsing as decimal integer
+            try
+            {
+                int val = std::stoi(token);
+                // clamp to uint16_t range
+                val = (val < 0) ? 0 : val;
+                val = (val > 65535) ? 65535 : val;
+                return static_cast<uint16_t>(val);
+            }
+            catch (...)
+            {
+                std::cout << "Failed to convert " << token << " to decimal." << std::endl;
+            }
         }
 
         return 0;
@@ -472,12 +478,6 @@ private:
         // returns -1 to indicate access violation
         if (destAddr.pageNumber == -1 || destAddr.offset == -1)
         {
-            // print all vars
-            for (const auto &[key, address] : vars)
-            {
-                std::cout << "[DEBUG] Variable: " << key << " = " << address << std::endl;
-            }
-
             std::string header = "[WRITE] Access violation at address " + args[0];
             if (printToConsole)
                 std::cerr << header << std::endl;
@@ -507,11 +507,8 @@ private:
     LogicalAddress getLogicalAddress(Memory *memory, uint16_t address, std::vector<int> &allocatedPages) const
     {
         VirtualAddress virtualAddress = parseVirtualAddress(address, memory->getPageSize());
-
-        std::cout << "Translating virtual address: pageNumber=" << virtualAddress.pageNumber
-                  << ", offset=" << virtualAddress.offset << std::endl;
-
-        return getLogicalAddress(memory, virtualAddress, allocatedPages);
+        LogicalAddress logicalAddress = getLogicalAddress(memory, virtualAddress, allocatedPages);
+        return logicalAddress;
     }
 
     /**
@@ -525,13 +522,16 @@ private:
         int numPages = static_cast<int>(allocatedPages.size());
         if (pageNumber < 0 || pageNumber >= numPages)
         {
-            std::cout << "[ERROR] Access violation: page number " << pageNumber
-                      << " is outside allocated pages (0 to " << (numPages - 1) << ")" << std::endl;
             return {-1, -1};
         }
 
+        LogicalAddress logicalAddress = {allocatedPages[pageNumber], virtualAddress.offset};
+
+        // std::cout << "Translating virtual page number " << virtualAddress.str()
+        //           << " to physical frame number " << logicalAddress.str() << std::endl;
+
         // if valid, return the translated physical address
-        return {allocatedPages[pageNumber], virtualAddress.offset};
+        return logicalAddress;
     }
 };
 

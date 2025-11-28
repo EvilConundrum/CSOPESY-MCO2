@@ -16,6 +16,8 @@
 #include "view\CLI.cpp"
 #include "view\misc.cpp"
 
+#define DEBUG true
+
 /**  TODO: TLDR there will be 2 threads:
  *   - Main thread: handles CLI input and command parsing
  *   - Scheduler thread: handles CPU scheduling and process execution
@@ -391,6 +393,25 @@ public:
                 }
                 break; // Break from SCREEN case
             }
+
+#ifdef DEBUG
+            case MEM_SNAPSHOT:
+                if (memory)
+                    cli.displayMessage(memory->getMemorySnapshot());
+                else
+                    cli.displayMessage("Memory not initialized.");
+                break;
+
+            case FORCE_FLUSH:
+                if (memory)
+                {
+                    memory->flushAllPagesToBackingStore();
+                    cli.displayMessage("All pages flushed to backing store.");
+                }
+                else
+                    cli.displayMessage("Memory not initialized.");
+                break;
+#endif
 
             default:
                 break;
