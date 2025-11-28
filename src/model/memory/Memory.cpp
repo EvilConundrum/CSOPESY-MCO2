@@ -5,6 +5,11 @@
 #include "./BackingStore.cpp"
 #include "./Frame.cpp"
 #include "./Address.cpp"
+
+#ifndef DEBUG
+#define DEBUG true
+#endif
+
 /**
  * Memory management unit, handles page reads/writes and page faults
  */
@@ -65,8 +70,8 @@ public:
     void write(LogicalAddress address, const uint16_t &data, uint64_t currentTick)
     {
         // check if page is in memory
-
         int frameIndex = handlePageFault(address.pageNumber, currentTick);
+
         if (frameIndex >= 0)
         {
             Frame &frame = physicalMemory[frameIndex];
@@ -159,9 +164,35 @@ public:
     std::string getMemorySnapshot() const
     {
         std::string result;
+
+        int numFrameDigits = std::to_string(this->physicalMemory.size()).length();
+        // gets the number of digits in the highest page number
+        int numPageDigits;
+
         for (const auto &frame : physicalMemory)
         {
-            result += "Frame " + std::to_string(frame.getFrameNumber()) + " Page: " + (frame.isValid() ? std::to_string(frame.getPageNumber()) : "Free") + " Data: ";
+            if (frame.isValid())
+            {
+                int pageNumDigits = std::to_string(frame.getPageNumber()).length();
+                if (pageNumDigits > numPageDigits)
+                    numPageDigits = pageNumDigits;
+            }
+        }
+
+        auto padLeft = [](const std::string &s, int totalLength, char paddingChar = ' ')
+        {
+            if (s.length() >= totalLength)
+                return s;
+            return std::string(totalLength - s.length(), paddingChar) + s;
+        };
+
+        numPageDigits = std::max(numPageDigits, 4); // minimum 4 digits for page numbers
+
+        int i = 0;
+        for (const auto &frame : physicalMemory)
+        {
+            result += "[" + padLeft(std::to_string(frame.getFrameNumber()), numFrameDigits) + "] ";
+            result += "Page: " + (padLeft(frame.isValid() ? std::to_string(frame.getPageNumber()) : "Free", numPageDigits)) + " Data: ";
             result += frame.getFrameAsString() + "\n";
         }
         return result;
