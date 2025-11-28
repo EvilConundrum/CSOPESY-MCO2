@@ -171,6 +171,7 @@ public:
      * Checks if the process is finished
      */
     bool isFinished() const { return state == ProcessState::FINISHED || currentInstructionLine >= totalInstructions; }
+    bool isTerminated() const { return state == ProcessState::TERMINATED; }
 
     /**
      * Gets the creation time of the process

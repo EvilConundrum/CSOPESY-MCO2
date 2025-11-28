@@ -98,14 +98,6 @@ public:
                         readyQueue->enqueueProcess(processToRequeue);
                     }
                 }
-
-                // if process finished, sequester memory pages
-                if (processToRequeue != nullptr && processToRequeue->isFinished())
-                {
-                    std::vector<int> allocatedPages = processToRequeue->getAllocatedPages();
-                    for (int pageNumber : allocatedPages)
-                        this->memory->freePage(pageNumber);
-                }
             }
 
             // Assign new process if CPU became idle
