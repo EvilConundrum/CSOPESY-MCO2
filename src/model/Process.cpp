@@ -108,6 +108,7 @@ public:
         if (sleepTime > 0)
         {
             beginSleep(sleepTime);
+            currentInstructionLine++;
             return true;
         }
         else if (sleepTime == -1)
