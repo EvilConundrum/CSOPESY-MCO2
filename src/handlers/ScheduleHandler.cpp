@@ -16,6 +16,7 @@ private:
     std::shared_ptr<ReadyQueue> readyQueue;
     std::string schedulerType;
     std::atomic<unsigned long long> cpuTicks;
+    std::atomic<unsigned long long> activeTicks;
     std::shared_ptr<WaitingQueue> waitingQueue;
     std::shared_ptr<Memory> memory;
 
@@ -23,8 +24,7 @@ public:
     ScheduleHandler(std::shared_ptr<Memory> memoryPtr,
                     const std::string &schedulerType,
                     int timeQuantum,
-                    Config *config,
-                    const std::string &backingStoreFilename = "backing_store.txt")
+                    Config *config)
         : schedulerType(schedulerType), memory(memoryPtr)
     {
         this->cpuTicks = 0;
@@ -82,6 +82,7 @@ public:
 
         releaseSleepingProcesses();
 
+        bool isActive = false;
         for (auto &cpu : cpus)
         {
             if (!cpu.isIdle())
@@ -98,6 +99,9 @@ public:
                         readyQueue->enqueueProcess(processToRequeue);
                     }
                 }
+
+                // indicates that at least one CPU is active this cycle
+                isActive = true;
             }
 
             // Assign new process if CPU became idle
@@ -110,6 +114,9 @@ public:
                 }
             }
         }
+
+        if (isActive) // track active ticks
+            activeTicks++;
     }
 
     /**
@@ -124,6 +131,7 @@ public:
     bool isReadyQueueEmpty() { return readyQueue->empty(); }
 
     unsigned long long getCpuTicks() const { return cpuTicks.load(); }
+    unsigned long long getActiveTicks() const { return activeTicks.load(); }
 
     /**
      * Resets the CPU tick counter to zero
