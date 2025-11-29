@@ -18,7 +18,7 @@ typedef struct VirtualAddress : public Address {} VirtualAddress;
  * Converts a hexadecimal string (e.g., "0x1A3F") to its uint16_t representation
  * requires hex string to start with "0x" or "0X" to prevent misinterpretation with decimal
  */
-uint16_t convHexToUint16(const std::string &hexStr)
+uint16_t to_uint16(const std::string &hexStr)
 {
     std::string hexStrCopy = hexStr;
     if (hexStrCopy.rfind("0x", 0) == 0 || hexStrCopy.rfind("0X", 0) == 0)
@@ -34,6 +34,13 @@ uint16_t convHexToUint16(const std::string &hexStr)
     {
         throw e;
     }
+}
+
+std::string to_hex(uint16_t value)
+{
+    std::stringstream ss;
+    ss << "0x" << std::hex << std::uppercase << value;
+    return ss.str();
 }
 
 uint16_t makeLogicalAddress(LogicalAddress addr, int pageSize)

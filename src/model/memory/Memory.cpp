@@ -45,9 +45,6 @@ public:
 
     void init()
     {
-        // print if config is null or not
-        std::cout << "Initializing Memory with config: " << (config ? "valid" : "null") << std::endl;
-
         this->numFrames = this->getNumFrames(*config);
         this->physicalMemory = std::vector<Frame>();
 

@@ -10,6 +10,7 @@
 #include <algorithm>
 #include "../model/Process.cpp"
 #include "../model/Config.cpp"
+#include "../model/memory/Address.cpp"
 
 class GeneratorHandler
 {
@@ -254,8 +255,8 @@ private:
 
     Instruction createReadInstruction(const std::vector<std::string> &declaredVars, int numPages, int pageSize)
     {
-        // Randomly decide to cause a violation (1 in 1024 chance)
-        std::uniform_int_distribution<int> violationDist(1, 1024);
+        // Randomly decide to cause a violation (1 in 32768 chance)
+        std::uniform_int_distribution<int> violationDist(1, 32768);
         bool causeViolation = (violationDist(rng) == 67);
 
         if (declaredVars.size() < 1)
@@ -270,7 +271,7 @@ private:
             address = numPages * pageSize + (rng() % (1 << 5)) * 2;
         std::vector<std::string> vars(declaredVars.begin(), declaredVars.end());
         std::string var = vars[rng() % maxSymbolTable(vars.size())];
-        return Instruction("READ", {var, std::to_string(address)});
+        return Instruction("READ", {var, to_hex(address)});
     }
 
     Instruction createWriteInstruction(const std::vector<std::string> &declaredVars, int numPages, int pageSize)
@@ -281,6 +282,6 @@ private:
         std::string var = declaredVars[rng() % maxSymbolTable(declaredVars.size())];
         std::uniform_int_distribution<int> valueDist(64, numPages * pageSize - 1); // first 64 addresses are reserved for variables
         uint16_t val = valueDist(rng) & 0xFFFE;                                    // make it even
-        return Instruction("WRITE", {std::to_string(val), var});
+        return Instruction("WRITE", {to_hex(val), var});
     }
 };

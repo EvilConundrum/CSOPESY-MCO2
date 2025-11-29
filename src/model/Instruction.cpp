@@ -169,7 +169,7 @@ private:
             // try parsing as hexadecimal integer
             try
             {
-                uint16_t val = convHexToUint16(token);
+                uint16_t val = to_uint16(token);
                 return val;
             }
             catch (...)
@@ -198,7 +198,6 @@ private:
         return 0;
     }
 
-    // TODO: implement reading and writing variables from memory
     void executePrint(const std::unordered_map<std::string, uint16_t> &vars,
                       Memory *memory, uint64_t currentTick, std::vector<int> &allocatedPages,
                       std::function<void(const std::string &)> logCallback,
@@ -219,9 +218,9 @@ private:
                 std::string out = token;
                 // check if token starts with substring \" and ends with \"
                 if (out.rfind("\\\"", 0) == 0 && out.rfind("\\\"") == out.length() - 2)
-                {
                     out = out.substr(2, out.length() - 4); // remove quotes
-                }
+                else if (out.front() == '"' && out.back() == '"')
+                    out = out.substr(1, out.length() - 2); // remove quotes
                 msg << out;
             }
         }
@@ -273,7 +272,6 @@ private:
             logCallback(output);
     }
 
-    // TODO: implement reading and writing variables from memory
     void executeAdd(std::unordered_map<std::string, uint16_t> &vars,
                     Memory *memory, uint64_t currentTick, std::vector<int> &allocatedPages,
                     std::function<void(const std::string &)> logCallback,
