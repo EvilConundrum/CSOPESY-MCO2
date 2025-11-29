@@ -38,6 +38,9 @@ private:
     int coresUsed;
     std::vector<std::chrono::duration<double>> coreActiveTimes;
 
+    std::vector<std::shared_ptr<Process>> terminatedProcesses;
+    int totalProcessesTerminated = 0;
+
 public:
     ReportHandler(Config* configPtr) 
         : config(configPtr), 
@@ -185,26 +188,28 @@ public:
      * Updates process lists from external source (called by main)
      */
     void updateProcessLists(const std::vector<std::shared_ptr<Process>>& allProcesses) {
-        // Clear current lists
         runningProcesses.clear();
-        
-        // Categorize processes
+
         for (const auto& process : allProcesses) {
             if (process->isFinished()) {
-                // Only add if not already in completed list
-                if (std::find(completedProcesses.begin(), completedProcesses.end(), process) 
-                    == completedProcesses.end()) {
+                if (std::find(completedProcesses.begin(), completedProcesses.end(), process) == completedProcesses.end()) {
                     completedProcesses.push_back(process);
                     totalProcessesCompleted++;
+                }
+            } else if (process->isTerminated()) {
+                if (std::find(terminatedProcesses.begin(), terminatedProcesses.end(), process) == terminatedProcesses.end()) {
+                    terminatedProcesses.push_back(process);
+                    totalProcessesTerminated++;
                 }
             } else {
                 runningProcesses.push_back(process);
             }
         }
-        
+
         totalProcessesCreated = allProcesses.size();
         updateCoresUsed();
     }
+
 
     /**
      * Generates the status report content (used by both screen -ls and report-util)
@@ -274,10 +279,44 @@ public:
             }
         }
 
+        report << "\n";
+
+        // Terminated processes summary
+        report << "\nTerminated processes:\n";
+        if (terminatedProcesses.empty()) {
+            report << "No terminated processes.\n";
+        } else {
+            for (const auto& process : terminatedProcesses) {
+                report << process->getPID() << "   (" 
+                    << process->getCreationTimeStr() << ")   "
+                    << "Terminated   " << process->getCurrentLine()
+                    << " / " << process->getTotalInstructions() << "\n";
+            }
+        }
+
         report << "----------------------------------------------\n";
 
         return report.str();
     }
+
+    void recordProcessTermination(std::shared_ptr<Process> process) {
+        totalProcessesTerminated++;
+        terminatedProcesses.push_back(process);
+
+        // Remove from runningProcesses if present
+        auto it = std::find(runningProcesses.begin(), runningProcesses.end(), process);
+        if (it != runningProcesses.end()) {
+            runningProcesses.erase(it);
+        }
+
+        updateCoresUsed();
+
+        // If no more running processes, mark CPU idle
+        if (runningProcesses.empty()) {
+            markCpuIdle();
+        }
+    }
+
 
     // Getters for other components
     std::vector<std::shared_ptr<Process>> getRunningProcesses() const {
@@ -302,5 +341,12 @@ public:
 
     int getTotalCores() const {
         return numCpuCores;
+    }
+    std::vector<std::shared_ptr<Process>> getTerminatedProcesses() const {
+        return terminatedProcesses;
+    }
+
+    int getTotalProcessesTerminated() const {
+        return totalProcessesTerminated;
     }
 };

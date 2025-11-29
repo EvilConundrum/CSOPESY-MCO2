@@ -83,6 +83,12 @@ public:
         totalInstructions = instructions.size();
     }
 
+    // Returns the process name (PID)
+    std::string getName() const { return PID; }
+
+    // Returns memory usage in bytes (or whatever unit you prefer)
+    int getMemoryUsage() const { return memoryRequired; }
+
     /**
      * Executes the next instruction in the process
      * Returns true if instruction was executed, false if finished

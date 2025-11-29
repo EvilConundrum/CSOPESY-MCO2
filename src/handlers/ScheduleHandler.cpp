@@ -119,6 +119,20 @@ public:
             activeTicks++;
     }
 
+    std::vector<std::shared_ptr<Process>> getRunningProcesses(const std::vector<CPU>& cpus)
+    {
+        std::vector<std::shared_ptr<Process>> running;
+
+        for (const auto& cpu : cpus)
+        {
+            if (!cpu.isIdle()) {
+                running.push_back(cpu.getCurrentProcess());
+            }
+        }
+
+        return running;
+    }
+
     /**
      * Gets the ready queue
      */

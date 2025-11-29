@@ -19,7 +19,6 @@ enum Commands
     PROCESS_SMI,
     VMSTAT,
     REPORT_UTIL,
-    // everything below this is for debug usage only
     MEM_SNAPSHOT,
     FORCE_FLUSH,
 };
