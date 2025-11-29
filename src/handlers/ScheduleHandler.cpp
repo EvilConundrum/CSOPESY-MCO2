@@ -15,8 +15,8 @@ class ScheduleHandler
 private:
     std::shared_ptr<ReadyQueue> readyQueue;
     std::string schedulerType;
-    std::atomic<unsigned long long> cpuTicks;
-    std::atomic<unsigned long long> activeTicks;
+    std::atomic<uint64_t> cpuTicks;
+    std::atomic<uint64_t> activeTicks;
     std::shared_ptr<WaitingQueue> waitingQueue;
     std::shared_ptr<Memory> memory;
 
@@ -117,6 +117,12 @@ public:
 
         if (isActive) // track active ticks
             activeTicks++;
+
+        // clamp the active ticks to not exceed cpu ticks
+        // in the rare occasion that C++ decides to make activeTicks > cpuTicks
+        if (activeTicks.load() > cpuTicks.load())
+            activeTicks = cpuTicks.load();
+
     }
 
     /**
@@ -130,8 +136,8 @@ public:
     size_t getWaitingProcessCount() { return readyQueue->size(); }
     bool isReadyQueueEmpty() { return readyQueue->empty(); }
 
-    unsigned long long getCpuTicks() const { return cpuTicks.load(); }
-    unsigned long long getActiveTicks() const { return activeTicks.load(); }
+    uint64_t getCpuTicks() const { return cpuTicks.load(); }
+    uint64_t getActiveTicks() const { return activeTicks.load(); }
 
     /**
      * Resets the CPU tick counter to zero

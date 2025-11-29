@@ -234,8 +234,8 @@ public:
             << "Total Memory:     " << memory->getTotalMemoryBytes() << " bytes\n"
             << "Free Memory:      " << memory->getFreeMemoryBytes() << " bytes\n"
             << "Used Memory:      " << memory->getUsedMemoryBytes() << " bytes\n"
-            << "Active CPU ticks: " << static_cast<unsigned long long>(scheduler->getActiveTicks()) << "\n"
-            << "Total CPU ticks:  " << static_cast<unsigned long long>(scheduler->getCpuTicks()) << "\n"
+            << "Active CPU ticks: " << static_cast<uint64_t>(scheduler->getActiveTicks()) << "\n"
+            << "Total CPU ticks:  " << static_cast<uint64_t>(scheduler->getCpuTicks()) << "\n"
             << "Num Page-ins:     " << static_cast<uint64_t>(memory->getNumPagedIn()) << "\n"
             << "Num Page-outs:    " << static_cast<uint64_t>(memory->getNumPagedOut()) << "\n"
             << "------------------------------------------------------------\n";

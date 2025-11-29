@@ -103,7 +103,7 @@ public:
         };
 
         // Pass false for printToConsole to suppress console output
-        int sleepTime = instructions[currentInstructionLine].execute(variables, memory, currentTick, allocatedPages, logCallback, false);
+        int sleepTime = instructions[currentInstructionLine].execute(variables, memory, currentTick, allocatedPages, memoryRequired, logCallback, false);
 
         if (sleepTime > 0)
         {

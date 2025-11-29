@@ -36,36 +36,10 @@ public:
         ss << "p" << std::setfill('0') << std::setw(2) << processCounter;
         std::string processName = ss.str();
 
-        // Determine number of instructions
-        std::uniform_int_distribution<int> distInstr(config.getMinInstructions(), config.getMaxInstructions());
-        int numInstructions = distInstr(rng);
-
-        // determine amount of memory to be allocated to this process
-
         std::uniform_int_distribution<int> distMem(config.getMinMemPerProc(), config.getMaxMemPerProc());
         int memoryRequired = distMem(rng);
 
-        // Create process
-        auto process = std::make_shared<Process>(processName, numInstructions, memoryRequired);
-
-        // Allocate memory pages
-        process->addPageNumbers(memory.get()->makePages(memoryRequired));
-
-        // Track declared variables to avoid using undeclared ones
-        std::vector<std::string> declaredVars;
-
-        int i = 0;
-        while (i < numInstructions)
-        {
-            Instruction instr = generateRandomInstruction(declaredVars, process->getNumPages(), config.getMemPerFrame());
-            if (instr.getType() == InstructionType::UNKNOWN)
-                continue;
-
-            process->addInstruction(instr);
-            ++i;
-        }
-
-        return process;
+        return generateProcessWithName(config, processName, memory.get(), memoryRequired);
     }
 
     /**
@@ -89,7 +63,7 @@ public:
         int i = 0;
         while (i < numInstructions)
         {
-            Instruction instr = generateRandomInstruction(declaredVars, process->getNumPages(), config.getMemPerFrame());
+            Instruction instr = generateRandomInstruction(declaredVars, process->getNumPages(), config.getMemPerFrame(), memoryRequired);
 
             if (instr.getType() == InstructionType::UNKNOWN)
                 continue;
@@ -121,15 +95,29 @@ public:
 private:
     /**
      * Helper to ensure that variable access only reads
-     * the first 32 variables as defined by the limit of the symbol table
-     * Every other variable declared after that is ignored when interpreted
+     * Each variable is 2 bytes
+     * For processes with 64 or more bytes allocated, we can have up to 32 variables
+     * For processes with less than 64 bytes allocated, the max number of variables is:
+     *   requiredMemory // 2 or the current number of declared variables, whichever is less
+     * This is not called by the create declare as in execution,
+     * extra variables declared after that are ignored when interpreted
+     * This is for ensuring the other instructions are making valid variable accesses
      */
-    int maxSymbolTable(int current)
+    int maxSymbolTable(int requiredMemory, int currentNumVars)
     {
-        return (current > 32) ? 32 : current;
+        int maxVarsForProcess = requiredMemory / 2;
+        int limit;
+
+        if (requiredMemory >= 64)
+            limit = 32;
+        else
+            limit = std::min(maxVarsForProcess, currentNumVars);
+
+        // Ensure we never return more than actually declared
+        return std::min(limit, currentNumVars);
     }
 
-    Instruction generateRandomInstruction(std::vector<std::string> &declaredVars, int numAllocatedPages, int pageSize)
+    Instruction generateRandomInstruction(std::vector<std::string> &declaredVars, int numAllocatedPages, int pageSize, int requiredMemory)
     {
         std::uniform_int_distribution<int> valueDist(0, 10);    // random int values
         std::uniform_int_distribution<int> instrTypeDist(0, 7); // random instruction
@@ -137,34 +125,35 @@ private:
         Instruction instr;
 
         int type = instrTypeDist(rng);
+        int numVars = maxSymbolTable(requiredMemory, static_cast<int>(declaredVars.size()));
         switch (type)
         {
         case 0: // DECLARE
             instr = createDeclareInstruction(valueDist, declaredVars);
             break;
         case 1: // ADD
-            instr = createAddInstruction(valueDist, declaredVars);
+            instr = createAddInstruction(valueDist, declaredVars, numVars);
             break;
         case 2: // SUBTRACT
-            instr = createSubtractInstruction(valueDist, declaredVars);
+            instr = createSubtractInstruction(valueDist, declaredVars, numVars);
             break;
         case 3: // PRINT
-            instr = createPrintInstruction(declaredVars);
+            instr = createPrintInstruction(declaredVars, numVars);
             break;
         case 4: // SLEEP
             instr = createSleepInstruction(valueDist);
             break;
         case 5: // FOR
-            instr = createForInstruction(declaredVars);
+            instr = createForInstruction(declaredVars, numVars);
             break;
 
         case 6: // READ
-            instr = createReadInstruction(declaredVars, numAllocatedPages, pageSize);
+            instr = createReadInstruction(declaredVars, requiredMemory, numVars);
             break;
 
         case 7: // WRITE
         {
-            instr = createWriteInstruction(declaredVars, numAllocatedPages, pageSize);
+            instr = createWriteInstruction(declaredVars, requiredMemory, numVars);
             break;
         }
 
@@ -184,34 +173,32 @@ private:
         return instr;
     }
 
-    Instruction createAddInstruction(std::uniform_int_distribution<int> &valueDist, const std::vector<std::string> &declaredVars)
+    Instruction createAddInstruction(std::uniform_int_distribution<int> &valueDist, const std::vector<std::string> &declaredVars, int numVars)
     {
         if (declaredVars.size() < 1)
             return Instruction(); // Return unknown instruction to skip
-        std::string dest = declaredVars[rng() % maxSymbolTable(declaredVars.size())];
-        std::string op1 = declaredVars[rng() % maxSymbolTable(declaredVars.size())];
+        std::string dest = declaredVars.at(rng() % numVars);
+        std::string op1 = declaredVars.at(rng() % numVars);
         std::string op2 = std::to_string(valueDist(rng));
         return Instruction("ADD", {dest, op1, op2});
     }
 
-    Instruction createSubtractInstruction(std::uniform_int_distribution<int> &valueDist, const std::vector<std::string> &declaredVars)
+    Instruction createSubtractInstruction(std::uniform_int_distribution<int> &valueDist, const std::vector<std::string> &declaredVars, int numVars)
     {
         if (declaredVars.size() < 1)
             return Instruction(); // Return unknown instruction to skip
-        std::vector<std::string> vars(declaredVars.begin(), declaredVars.end());
-        std::string dest = vars[rng() % maxSymbolTable(vars.size())];
-        std::string op1 = vars[rng() % maxSymbolTable(vars.size())];
+        std::string dest = declaredVars.at(rng() % numVars);
+        std::string op1 = declaredVars.at(rng() % numVars);
         std::string op2 = std::to_string(valueDist(rng));
         return Instruction("SUBTRACT", {dest, op1, op2});
     }
 
-    Instruction createPrintInstruction(const std::vector<std::string> &declaredVars)
+    Instruction createPrintInstruction(const std::vector<std::string> &declaredVars, int numVars)
     {
         if (declaredVars.size() < 1)
             return Instruction("PRINT", {"\"Hello World\""});
 
-        std::vector<std::string> vars(declaredVars.begin(), declaredVars.end());
-        std::string var = vars[rng() % maxSymbolTable(vars.size())];
+        std::string var = declaredVars.at(rng() % numVars);
         return Instruction("PRINT", {"\"Value of\"", "+", var});
     }
 
@@ -222,7 +209,7 @@ private:
         return Instruction("SLEEP", {std::to_string(ticks)});
     }
 
-    Instruction createForInstruction(const std::vector<std::string> &declaredVars)
+    Instruction createForInstruction(const std::vector<std::string> &declaredVars, int numVars)
     {
         std::uniform_int_distribution<int> forCountDist(2, 5);
         int repeat = forCountDist(rng);
@@ -239,8 +226,7 @@ private:
                 subInstrs.push_back(Instruction("PRINT", {"\"Inside loop\"", "+", "\"iteration\""}));
             else if (subType == 1 && !declaredVars.empty())
             {
-                std::vector<std::string> vars(declaredVars.begin(), declaredVars.end());
-                std::string var = vars[rng() % maxSymbolTable(vars.size())];
+                std::string var = declaredVars.at(rng() % numVars);
                 subInstrs.push_back(Instruction("ADD", {var, var, "1"}));
             }
             else
@@ -253,7 +239,7 @@ private:
         return instr;
     }
 
-    Instruction createReadInstruction(const std::vector<std::string> &declaredVars, int numPages, int pageSize)
+    Instruction createReadInstruction(const std::vector<std::string> &declaredVars, int requiredMemory, int numVars)
     {
         // Randomly decide to cause a violation (1 in 32768 chance)
         std::uniform_int_distribution<int> violationDist(1, 32768);
@@ -263,25 +249,24 @@ private:
             return Instruction(); // Return unknown instruction to skip
 
         // select from a valid address
-        std::uniform_int_distribution<int> pageDist(0, numPages * pageSize - 1);
+        std::uniform_int_distribution<int> pageDist(0, requiredMemory - 1);
         uint16_t address = pageDist(rng) & 0xFFFE; // floor to even
 
         // add a random number to the last page index to go out of bounds
         if (causeViolation)
-            address = numPages * pageSize + (rng() % (1 << 5)) * 2;
-        std::vector<std::string> vars(declaredVars.begin(), declaredVars.end());
-        std::string var = vars[rng() % maxSymbolTable(vars.size())];
+            address = requiredMemory + (rng() % (1 << 5)) * 2;
+        std::string var = declaredVars.at(rng() % numVars);
         return Instruction("READ", {var, to_hex(address)});
     }
 
-    Instruction createWriteInstruction(const std::vector<std::string> &declaredVars, int numPages, int pageSize)
+    Instruction createWriteInstruction(const std::vector<std::string> &declaredVars, int requiredMemory, int numVars)
     {
-        if (declaredVars.size() < 1)
+        if (declaredVars.size() < 1 || requiredMemory <= 64)
             return Instruction(); // Return unknown instruction to skip
 
-        std::string var = declaredVars[rng() % maxSymbolTable(declaredVars.size())];
-        std::uniform_int_distribution<int> valueDist(64, numPages * pageSize - 1); // first 64 addresses are reserved for variables
-        uint16_t val = valueDist(rng) & 0xFFFE;                                    // make it even
+        std::string var = declaredVars.at(rng() % numVars);
+        std::uniform_int_distribution<int> valueDist(64, requiredMemory - 1); // first 64 addresses are reserved for variables
+        uint16_t val = valueDist(rng) & 0xFFFE;                               // make it even
         return Instruction("WRITE", {to_hex(val), var});
     }
 };

@@ -88,7 +88,7 @@ public:
      * - -1 for memory access violations (not sleep duration but indicates termination)
      */
     int execute(std::unordered_map<std::string, uint16_t> &variables,
-                Memory *memory, uint64_t currentTick, std::vector<int> &allocatedPages,
+                Memory *memory, uint64_t currentTick, std::vector<int> &allocatedPages, int allocatedMemory,
                 std::function<void(const std::string &)> logCallback = nullptr,
                 bool printToConsole = true) const
     {
@@ -99,7 +99,7 @@ public:
             executePrint(variables, memory, currentTick, allocatedPages, logCallback, printToConsole);
             return 0;
         case InstructionType::DECLARE:
-            executeDeclare(variables, memory, currentTick, allocatedPages, logCallback, printToConsole);
+            executeDeclare(variables, memory, currentTick, allocatedPages, allocatedMemory, logCallback, printToConsole);
             return 0;
         case InstructionType::ADD:
             executeAdd(variables, memory, currentTick, allocatedPages, logCallback, printToConsole);
@@ -110,12 +110,12 @@ public:
         case InstructionType::SLEEP:
             return executeSleep(logCallback, printToConsole);
         case InstructionType::FOR:
-            executeFor(variables, memory, currentTick, allocatedPages, logCallback, printToConsole);
+            executeFor(variables, memory, currentTick, allocatedPages, allocatedMemory, logCallback, printToConsole);
             return 0;
         case InstructionType::READ:
-            return executeRead(variables, memory, currentTick, allocatedPages, logCallback, printToConsole);
+            return executeRead(variables, memory, currentTick, allocatedPages, allocatedMemory, logCallback, printToConsole);
         case InstructionType::WRITE:
-            return executeWrite(variables, memory, currentTick, allocatedPages, logCallback, printToConsole);
+            return executeWrite(variables, memory, currentTick, allocatedPages, allocatedMemory, logCallback, printToConsole);
         default:
         {
             std::string errMsg = "[ERROR] Unknown instruction: " + command;
@@ -158,7 +158,7 @@ private:
         if (it != vars.end())
         {
             VirtualAddress addr = getAddress(vars, token, memory->getPageSize());
-            LogicalAddress logicalAddr = getLogicalAddress(memory, addr, allocatedAddresses);
+            LogicalAddress logicalAddr = mapLogicalToPhysical(memory, addr, allocatedAddresses);
             return memory->read(logicalAddr, currentTick);
         }
 
@@ -234,7 +234,7 @@ private:
     // TODO: implement reading and writing variables from memory
     void executeDeclare(std::unordered_map<std::string, uint16_t> &vars,
                         Memory *memory, uint64_t currentTick, std::vector<int> &allocatedPages,
-                        std::function<void(const std::string &)> logCallback,
+                        int allocatedMemory, std::function<void(const std::string &)> logCallback,
                         bool printToConsole) const
     {
         if (args.size() < 2)
@@ -247,9 +247,12 @@ private:
             return;
         }
 
-        if (vars.size() >= 32 && vars.find(args[0]) == vars.end())
+        // min(32, allocatedMemory / 2)
+        int maxVars = (allocatedMemory >= 64) ? 32 : allocatedMemory / 2;
+
+        if (vars.size() >= maxVars && vars.find(args[0]) == vars.end())
         {
-            std::string errMsg = "[ERROR] Variable limit reached (32 variables max)";
+            std::string errMsg = "[ERROR] Variable limit reached (" + std::to_string(maxVars) + " variables max)";
             if (printToConsole)
                 std::cerr << errMsg << std::endl;
             if (logCallback)
@@ -376,7 +379,7 @@ private:
 
     int executeFor(std::unordered_map<std::string, uint16_t> &vars,
                    Memory *memory, uint64_t currentTick, std::vector<int> &allocatedPages,
-                   std::function<void(const std::string &)> logCallback,
+                   int allocatedMemory, std::function<void(const std::string &)> logCallback,
                    bool printToConsole) const
     {
         if (args.empty())
@@ -401,7 +404,7 @@ private:
         // Execute subinstructions repeatCount times
         for (uint16_t i = 0; i < repeatCount; ++i)
             for (const auto &instr : subInstructions)
-                instr.execute(vars, memory, currentTick, allocatedPages, logCallback, printToConsole);
+                instr.execute(vars, memory, currentTick, allocatedPages, allocatedMemory, logCallback, printToConsole);
 
         // FOR itself is considered instant (0 ticks) for unit tests
         return 0;
@@ -410,7 +413,7 @@ private:
     // TODO: verify function for correctness
     int executeRead(std::unordered_map<std::string, uint16_t> &vars,
                     Memory *memory, uint64_t currentTick, std::vector<int> &allocatedPages,
-                    std::function<void(const std::string &)> logCallback,
+                    int allocatedMemory, std::function<void(const std::string &)> logCallback,
                     bool printToConsole) const
     {
         // Validate args[0] as destination variable name and args[1] as hex address.
@@ -427,8 +430,8 @@ private:
         VirtualAddress dest = getAddress(vars, args[0], memory->getPageSize());
         uint16_t src = getValue(memory, vars, args[1], allocatedPages, currentTick);
 
-        LogicalAddress destAddr = getLogicalAddress(memory, dest, allocatedPages);
-        LogicalAddress srcAddr = getLogicalAddress(memory, src, allocatedPages);
+        LogicalAddress destAddr = mapLogicalToPhysical(memory, dest, allocatedPages);
+        LogicalAddress srcAddr = getLogicalAddress(memory, src, allocatedPages, allocatedMemory);
 
         // no need to check destAddr validity as it's from vars
         if (srcAddr.pageNumber == -1 || srcAddr.offset == -1)
@@ -459,7 +462,7 @@ private:
     // TODO: verify function for correctness
     int executeWrite(std::unordered_map<std::string, uint16_t> &vars,
                      Memory *memory, uint64_t currentTick, std::vector<int> &allocatedPages,
-                     std::function<void(const std::string &)> logCallback,
+                     int allocatedMemory, std::function<void(const std::string &)> logCallback,
                      bool printToConsole) const
     {
 
@@ -479,7 +482,7 @@ private:
         uint16_t dest = getValue(memory, vars, args[0], allocatedPages, currentTick),
                  src = getValue(memory, vars, args[1], allocatedPages, currentTick);
 
-        LogicalAddress destAddr = getLogicalAddress(memory, dest, allocatedPages);
+        LogicalAddress destAddr = getLogicalAddress(memory, dest, allocatedPages, allocatedMemory);
 
         // check for access violation
         // returns -1 to indicate access violation
@@ -511,10 +514,15 @@ private:
      * translates the logical address to physical page number and offset using allocatedPages
      * returns converted LogicalAddress if found, returns {-1, -1} if access violation
      */
-    LogicalAddress getLogicalAddress(Memory *memory, uint16_t address, std::vector<int> &allocatedPages) const
+    LogicalAddress getLogicalAddress(Memory *memory, uint16_t address, std::vector<int> &allocatedPages, int allocatedMemory = -1) const
     {
+        // if allocated memory is provided, use it to determine access violation
+        if (allocatedMemory != -1)
+            if (address < 0 || address >= static_cast<uint16_t>(allocatedMemory))
+                return {-1, -1};
+
         VirtualAddress virtualAddress = parseVirtualAddress(address, memory->getPageSize());
-        LogicalAddress logicalAddress = getLogicalAddress(memory, virtualAddress, allocatedPages);
+        LogicalAddress logicalAddress = mapLogicalToPhysical(memory, virtualAddress, allocatedPages);
         return logicalAddress;
     }
 
@@ -522,7 +530,7 @@ private:
      * translates the logical address to physical page number and offset using allocatedPages
      * returns converted LogicalAddress if found, returns {-1, -1} if access violation
      */
-    LogicalAddress getLogicalAddress(Memory *memory, VirtualAddress virtualAddress, std::vector<int> &allocatedPages) const
+    LogicalAddress mapLogicalToPhysical(Memory *memory, VirtualAddress virtualAddress, std::vector<int> &allocatedPages) const
     {
         int pageNumber = virtualAddress.pageNumber;
         // if page number is outside of the allocated pages, access violation
@@ -541,5 +549,3 @@ private:
         return logicalAddress;
     }
 };
-
-// screen -c process2 16384 "DECLARE varA 10; DECLARE varB 5; ADD varA varA varB; WRITE 0x100 varA; READ varB 0x100; PRINT(\"Result: \" + varB)"
