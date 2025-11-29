@@ -220,14 +220,17 @@ public:
         reportHandler->generateStatusReport(true);
     }
 
+    /**
+     * Provides a summary of memory usage and CPU ticks
+     */
     std::string vmstat()
     {
         std::stringstream msgStream;
 
         msgStream
-            << "-------------------------------------------------------\n"
-            << "                GreggyOS Memory Report                 \n"
-            << "-------------------------------------------------------\n"
+            << "------------------------------------------------------------\n"
+            << "                   GreggyOS Memory Report                   \n"
+            << "------------------------------------------------------------\n"
             << "Total Memory:     " << memory->getTotalMemoryBytes() << " bytes\n"
             << "Free Memory:      " << memory->getFreeMemoryBytes() << " bytes\n"
             << "Used Memory:      " << memory->getUsedMemoryBytes() << " bytes\n"
@@ -235,10 +238,24 @@ public:
             << "Total CPU ticks:  " << static_cast<unsigned long long>(scheduler->getCpuTicks()) << "\n"
             << "Num Page-ins:     " << static_cast<uint64_t>(memory->getNumPagedIn()) << "\n"
             << "Num Page-outs:    " << static_cast<uint64_t>(memory->getNumPagedOut()) << "\n"
-            << "-------------------------------------------------------\n";
+            << "------------------------------------------------------------\n";
 
         return msgStream.str();
     }
+
+    std::string processsmi()
+    {
+        std::stringstream msgStream;
+
+        msgStream
+            << "------------------------------------------------------------\n"
+            << "                   GreggyOS Process SMI Report               \n"
+            << "------------------------------------------------------------\n";
+
+        // TODO: put process SMI details here
+
+        return msgStream.str();
+        }
 
     void commandThread(std::atomic<bool> &isRunning, std::atomic<bool> &isInitialized)
     {
