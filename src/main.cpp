@@ -52,7 +52,7 @@ public:
         this->isSchedulerRunning = false;
         this->lastBatchTick = 0;
 
-        this->config = new Config(this->configFilePath);
+        this->config = nullptr;
         this->reportHandler = std::make_shared<ReportHandler>(this->config);
         this->processGenerator = std::make_shared<GeneratorHandler>();
 
@@ -87,7 +87,7 @@ public:
             configCheck.close();
 
             Config lConfig("config.txt");
-            *this->config = lConfig;
+            this->config = std::make_unique<Config>(lConfig).release();
 
             this->cli.displayMessage("");
             this->cli.displayMessage("Configuration loaded from config.txt");
@@ -168,19 +168,13 @@ public:
         int batchFreq = config->getBatchProcessFreq();
 
         // Check if it's time to generate a new process
-        if (currentTick - lastBatchTick >= batchFreq)
+        if (currentTick - lastBatchTick >= batchFreq && scheduler->getNumActiveProcesses() < 10)
         {
             auto newProcess = processGenerator->generateProcess(*config, memory);
             scheduler->addProcess(newProcess);
             if (screenHandler)
-            {
                 screenHandler->registerProcess(newProcess);
-            }
             lastBatchTick = currentTick;
-
-            // Optional: Log process generation (disabled to avoid console spam)
-            // std::cout << "[Scheduler] Generated process: " << newProcess->getPID()
-            //           << " at tick " << currentTick << std::endl;
         }
     }
 

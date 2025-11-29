@@ -110,9 +110,6 @@ public:
                 }
             }
         }
-
-        if (THROTTLE)
-            std::this_thread::sleep_for(std::chrono::milliseconds(THROTTLE_DELAY_MS));
     }
 
     /**
@@ -120,6 +117,7 @@ public:
      */
     std::shared_ptr<ReadyQueue> getReadyQueue() { return readyQueue; }
     std::shared_ptr<WaitingQueue> getWaitingQueue() { return waitingQueue; }
+    int getNumActiveProcesses() { return static_cast<int>(readyQueue->size() + waitingQueue->size()); }
     std::string getSchedulerType() const { return schedulerType; }
 
     size_t getWaitingProcessCount() { return readyQueue->size(); }
