@@ -216,6 +216,18 @@ public:
     uint64_t getNumHits() const { return num_hits; }
     uint64_t getNumFaults() const { return num_faults; }
 
+    uint64_t getTotalMemoryBytes() const { return numFrames * pageSize; }
+    uint64_t getFreeMemoryBytes() const {
+        int freeFrames = 0;
+        for (const auto &frame : physicalMemory)
+        {
+            if (!frame.isValid())
+                freeFrames++;
+        }
+        return freeFrames * pageSize;
+    }
+    uint64_t getUsedMemoryBytes() const { return getTotalMemoryBytes() - getFreeMemoryBytes(); }
+
 private:
     int getNumFrames(const Config &config)
     {

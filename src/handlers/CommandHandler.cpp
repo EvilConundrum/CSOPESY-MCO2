@@ -17,6 +17,7 @@ enum Commands
     SCHEDULER_START,
     SCHEDULER_STOP,
     PROCESS_SMI,
+    VMSTAT,
     REPORT_UTIL,
     // everything below this is for debug usage only
     MEM_SNAPSHOT,
@@ -123,6 +124,8 @@ private:
             return SCHEDULER_START;
         else if (command == "scheduler-stop")
             return SCHEDULER_STOP;
+        else if (command == "vmstat")
+            return VMSTAT;
         else if (command == "process-smi")
             return PROCESS_SMI;
         else if (command == "report-util")

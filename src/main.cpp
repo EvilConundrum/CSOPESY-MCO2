@@ -89,7 +89,6 @@ public:
             Config lConfig("config.txt");
             this->config = std::make_unique<Config>(lConfig).release();
 
-            this->cli.displayMessage("");
             this->cli.displayMessage("Configuration loaded from config.txt");
 
             // Initialize memory inside scheduler
@@ -99,10 +98,13 @@ public:
                 memory,
                 this->config->getSchedulerAlgorithm(),
                 this->config->getQuantumCycles(),
-                this->config,
-                "backing_store.txt");
+                this->config);
 
-            this->cli.displayMessage("Scheduler initialized with algorithm: " + this->config->getSchedulerAlgorithm() + " and quantum cycles: " + std::to_string(this->config->getQuantumCycles()));
+            this->cli.displayMessage(
+                "Scheduler initialized with algorithm: " + this->config->getSchedulerAlgorithm() +
+                (this->config->getSchedulerAlgorithm() == "rr"
+                     ? "with time quantum: " + std::to_string(this->config->getQuantumCycles())
+                     : ""));
 
             // Initialize report handler
             this->reportHandler = std::make_shared<ReportHandler>(this->config);
@@ -218,19 +220,39 @@ public:
         reportHandler->generateStatusReport(true);
     }
 
+    std::string vmstat()
+    {
+        std::stringstream msgStream;
+
+        msgStream
+            << "-------------------------------------------------------\n"
+            << "                GreggyOS Memory Report                 \n"
+            << "-------------------------------------------------------\n"
+            << "Total Memory:     " << memory->getTotalMemoryBytes() << " bytes\n"
+            << "Free Memory:      " << memory->getFreeMemoryBytes() << " bytes\n"
+            << "Used Memory:      " << memory->getUsedMemoryBytes() << " bytes\n"
+            << "Active CPU ticks: " << static_cast<unsigned long long>(scheduler->getActiveTicks()) << "\n"
+            << "Total CPU ticks:  " << static_cast<unsigned long long>(scheduler->getCpuTicks()) << "\n"
+            << "Num Page-ins:     " << static_cast<uint64_t>(memory->getNumPagedIn()) << "\n"
+            << "Num Page-outs:    " << static_cast<uint64_t>(memory->getNumPagedOut()) << "\n"
+            << "-------------------------------------------------------\n";
+
+        return msgStream.str();
+    }
+
     void commandThread(std::atomic<bool> &isRunning, std::atomic<bool> &isInitialized)
     {
         std::atomic<Commands> opcode(Commands::UNKNOWN);
         std::atomic<int> screenMode(-1);
         while (isRunning)
         {
-            this->cli.displayMessage("");
             std::vector<std::string> userInput = splitString(this->cli.getUserInput("C:\\GreggyOS"), ' ');
             commandHandler.parseCommand(userInput, isRunning, isInitialized, opcode, screenMode);
 
             if (userInput.empty())
                 continue;
 
+            cli.displayMessage();
             switch (opcode)
             {
             case INITIALIZE:
@@ -259,17 +281,10 @@ public:
                 break;
 
             case REPORT_UTIL:
-                if (screenHandler != nullptr)
-                {
-                    if (!screenHandler->writeScreenReport())
-                    {
-                        cli.displayMessage("Failed to generate utilization report.");
-                    }
-                }
+                if (screenHandler != nullptr && !screenHandler->writeScreenReport())
+                    cli.displayMessage("Failed to generate utilization report.");
                 else
-                {
                     cli.displayMessage("System not initialized. Cannot generate report.");
-                }
                 break;
 
             case SCREEN:
@@ -387,6 +402,12 @@ public:
                 break; // Break from SCREEN case
             }
 
+            case VMSTAT:
+                if (memory)
+                    this->cli.displayMessage(this->vmstat());
+                else
+                    cli.displayMessage("Memory not initialized.");
+                break;
 #ifdef DEBUG
             case MEM_SNAPSHOT:
                 if (memory)
@@ -409,6 +430,7 @@ public:
             default:
                 break;
             }
+            cli.displayMessage();
         }
     }
 };
