@@ -255,9 +255,11 @@ public:
         // ---------- CPU UTIL ----------
         uint64_t totalTicks = scheduler->getCpuTicks();
         uint64_t activeTicks = scheduler->getActiveTicks();
-        int cpuUtil = 0;
-        if (totalTicks > 0)
-            cpuUtil = static_cast<int>((activeTicks * 100) / totalTicks);
+        uint64_t cpuUtil = 0;
+        if (activeTicks > 0)
+            cpuUtil = static_cast<uint64_t>((activeTicks * 100) / totalTicks);
+        else
+            cpuUtil = 0;
 
         // ---------- MEMORY UTIL ----------
         uint64_t usedMem = memory->getUsedMemoryBytes();
@@ -265,12 +267,12 @@ public:
         int memUtil = static_cast<int>((usedMem * 100) / totalMem);
 
         // Convert to MiB for display
-        double usedMiB = usedMem / (1024.0 * 1024.0);
-        double totalMiB = totalMem / (1024.0 * 1024.0);
+        // double usedMiB = usedMem / (1024.0 * 1024.0);
+        // double totalMiB = totalMem / (1024.0 * 1024.0);
 
-        ss << "CPU-Util:     " << cpuUtil << "%\n";
+        ss << "CPU-Util:     " << static_cast<uint64_t>(cpuUtil) << "%\n";
         ss << "Memory Usage: " << std::fixed << std::setprecision(2)
-        << usedMiB << "MiB / " << totalMiB << "MiB\n";
+        << usedMem << "B / " << totalMem << "B\n";
         ss << "Memory Util:  " << memUtil << "%\n\n";
 
         ss << "============================================================\n";
@@ -278,7 +280,7 @@ public:
         ss << "------------------------------------------------------------\n";
 
         // ---------- PROCESS LIST ----------
-        auto processes = scheduler->getRunningProcesses(cpus);
+        auto processes = scheduler->getAllScheduledProcesses(cpus);
 
         if (processes.empty())
         {
@@ -288,9 +290,13 @@ public:
         {
             for (auto &p : processes)
             {
-                double pmem = p->getMemoryUsage() / (1024.0 * 1024.0);
-                ss << p->getName() << "   " << std::fixed << std::setprecision(2)
-                << pmem << "MiB\n";
+                // double pmem = p->getMemoryUsage() / (1024.0 * 1024.0);
+                if (p == nullptr)
+                    continue;
+
+                ss << p->getName() << "   " << std::fixed << std::setprecision(2) 
+                << memory->getMemUsedByProcess(p->getPageNumbers(), p->getMemoryUsage()) << "B / "
+                << p->getMemoryUsage() << "B\n";
             }
         }
 

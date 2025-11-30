@@ -15,8 +15,8 @@ class ScheduleHandler
 private:
     std::shared_ptr<ReadyQueue> readyQueue;
     std::string schedulerType;
-    std::atomic<unsigned long long> cpuTicks;
-    std::atomic<unsigned long long> activeTicks;
+    std::atomic<uint64_t> cpuTicks{0};
+    std::atomic<uint64_t> activeTicks{0};
     std::shared_ptr<WaitingQueue> waitingQueue;
     std::shared_ptr<Memory> memory;
 
@@ -133,6 +133,29 @@ public:
         return running;
     }
 
+    std::vector<std::shared_ptr<Process>> getAllScheduledProcesses(const std::vector<CPU>& cpus)
+    {
+        std::vector<std::shared_ptr<Process>> allProcesses;
+
+        // Get processes from CPUs
+        for (const auto& cpu : cpus)
+        {
+            if (!cpu.isIdle()) {
+                allProcesses.push_back(cpu.getCurrentProcess());
+            }
+        }
+
+        // Get processes from ready queue
+        auto readyProcesses = readyQueue->getAllProcesses();
+        allProcesses.insert(allProcesses.end(), readyProcesses.begin(), readyProcesses.end());
+
+        // Get processes from waiting queue
+        auto waitingProcesses = waitingQueue->getAllProcesses();
+        allProcesses.insert(allProcesses.end(), waitingProcesses.begin(), waitingProcesses.end());
+
+        return allProcesses;
+    }
+
     /**
      * Gets the ready queue
      */
@@ -144,8 +167,8 @@ public:
     size_t getWaitingProcessCount() { return readyQueue->size(); }
     bool isReadyQueueEmpty() { return readyQueue->empty(); }
 
-    unsigned long long getCpuTicks() const { return cpuTicks.load(); }
-    unsigned long long getActiveTicks() const { return activeTicks.load(); }
+    uint64_t getCpuTicks() const { return cpuTicks.load(); }
+    uint64_t getActiveTicks() const { return activeTicks.load(); }
 
     /**
      * Resets the CPU tick counter to zero
