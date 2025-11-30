@@ -123,23 +123,7 @@ public:
 
         return pageNumbers;
     }
-
-    /**
-     * Deallocates the page from the physical memory and backing store
-     * is called when a process terminates or completes
-     */
-    void freePage(int pageNumber)
-    {
-        int index = getFrameByPageNumber(pageNumber);
-
-        // release if found in physical memory
-        if (index >= 0)
-            physicalMemory[index].releaseMemory();
-
-        // free from backing store
-        this->backingStore.freePage(pageNumber);
-    }
-
+    
     std::string getMemoryState() const
     {
         std::string result;
