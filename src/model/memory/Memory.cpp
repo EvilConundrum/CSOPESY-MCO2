@@ -1,5 +1,4 @@
 #pragma once
-#include "../../headers.h"
 #include <vector>
 #include <cstdint>
 #include "../Config.cpp"
@@ -123,7 +122,7 @@ public:
 
         return pageNumbers;
     }
-    
+
     std::string getMemoryState() const
     {
         std::string result;

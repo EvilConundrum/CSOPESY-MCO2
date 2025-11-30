@@ -6,16 +6,20 @@
 #include <ctime>
 #include <thread>
 #include <atomic>
-#include "./headers.h"
-#include "model\Config.cpp"
-#include "model\CPU.cpp"
-#include "handlers\ScheduleHandler.cpp"
-#include "handlers\GeneratorHandler.cpp"
-#include "handlers\ScreenHandler.cpp"
-#include "handlers\CommandHandler.cpp"
-#include "handlers\ReportHandler.cpp"
-#include "view\CLI.cpp"
-#include "view\misc.cpp"
+
+#ifndef DEBUG
+#define DEBUG false
+#endif
+
+#include "model/Config.cpp"
+#include "model/CPU.cpp"
+#include "handlers/ScheduleHandler.cpp"
+#include "handlers/GeneratorHandler.cpp"
+#include "handlers/ScreenHandler.cpp"
+#include "handlers/CommandHandler.cpp"
+#include "handlers/ReportHandler.cpp"
+#include "view/CLI.cpp"
+#include "view/misc.cpp"
 
 /**  TODO: TLDR there will be 2 threads:
  *   - Main thread: handles CLI input and command parsing
@@ -95,7 +99,7 @@ public:
             msgStream << "Loaded " << configFileName << "...\n";
 
             // Initialize memory inside scheduler
-            this->memory = std::make_shared<Memory>(this->config, "backing_store.txt");
+            this->memory = std::make_shared<Memory>(this->config, "csopesy-backing-store.txt");
 
             msgStream << "Created " << config->getMaxOverallMem() << " bytes of memory (" 
                       << config->getMaxOverallMem() / this->memory->getPageSize() << " frames of "

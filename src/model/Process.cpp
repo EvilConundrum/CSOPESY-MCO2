@@ -289,7 +289,12 @@ private:
 
         std::time_t time = std::chrono::system_clock::to_time_t(timePoint);
         char buffer[26];
+#ifdef _WIN32
         ctime_s(buffer, sizeof(buffer), &time);
+#else
+        ctime_r(&time, buffer);
+#endif
+
         std::string timeStr(buffer);
         if (!timeStr.empty() && timeStr.back() == '\n')
         {

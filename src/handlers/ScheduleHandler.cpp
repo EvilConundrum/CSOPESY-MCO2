@@ -3,7 +3,6 @@
 #include <memory>
 #include <atomic>
 #include <string>
-#include "../headers.h"
 #include "../model/CPU.cpp"
 #include "../model/readyqueue/FCFS.cpp"
 #include "../model/readyqueue/RoundRobin.cpp"
