@@ -15,12 +15,14 @@
 class GeneratorHandler
 {
     int processCounter;
+    int latestViolation;
     std::mt19937 rng;
 
 public:
     GeneratorHandler()
     {
         processCounter = 0;
+        latestViolation = -1;
         rng.seed(std::chrono::system_clock::now().time_since_epoch().count());
     }
 
@@ -241,9 +243,11 @@ private:
 
     Instruction createReadInstruction(const std::vector<std::string> &declaredVars, int requiredMemory, int numVars)
     {
-        // Randomly decide to cause a violation (1 in 32768 chance)
-        std::uniform_int_distribution<int> violationDist(1, 32768);
-        bool causeViolation = (violationDist(rng) == 67);
+        // Randomly decide to cause a violation (1 in 2^15 chance)
+        std::uniform_int_distribution<uint64_t> violationDist(1, 32768);
+        // tldr: we only cause a violation if both rng is met and it is either the first violation or 1000 processes since the first violation
+        // we want this to be relatively rare
+        bool causeViolation = (violationDist(rng) == processCounter && (latestViolation != -1 || latestViolation > (processCounter - 1000)));
 
         if (declaredVars.size() < 1)
             return Instruction(); // Return unknown instruction to skip

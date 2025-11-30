@@ -73,26 +73,33 @@ public:
         delete config;
     }
 
-    void initializeConfig()
+    std::string initializeConfig()
     {
+        std::stringstream msgStream;
+        std::string configFileName = "config.txt";
+
+        msgStream << "Initializing config from \"" << configFileName << "\"...\n\n";
         try
         {
             // Check if config file exists first
-            std::ifstream configCheck("config.txt");
+            std::ifstream configCheck(configFileName);
             if (!configCheck.good())
             {
-                this->cli.displayMessage("Error: config.txt not found. Please ensure the configuration file exists.");
-                return;
+                throw std::runtime_error("config.txt not found. Please ensure the configuration file exists.");
             }
             configCheck.close();
 
-            Config lConfig("config.txt");
+            Config lConfig(configFileName);
             this->config = std::make_unique<Config>(lConfig).release();
 
-            this->cli.displayMessage("Configuration loaded from config.txt");
+            msgStream << "Loaded " << configFileName << "...\n";
 
             // Initialize memory inside scheduler
             this->memory = std::make_shared<Memory>(this->config, "backing_store.txt");
+
+            msgStream << "Created " << config->getMaxOverallMem() << " bytes of memory (" 
+                      << config->getMaxOverallMem() / this->memory->getPageSize() << " frames of "
+                      << this->memory->getPageSize() << " bytes each)...\n";
 
             this->scheduler = std::make_shared<ScheduleHandler>(
                 memory,
@@ -100,14 +107,17 @@ public:
                 this->config->getQuantumCycles(),
                 this->config);
 
-            this->cli.displayMessage(
-                "Scheduler initialized with algorithm: " + this->config->getSchedulerAlgorithm() +
-                (this->config->getSchedulerAlgorithm() == "rr"
-                     ? "with time quantum: " + std::to_string(this->config->getQuantumCycles())
-                     : ""));
+            std::string schedulerMsg = this->config->getSchedulerAlgorithm();
+            if (schedulerMsg == "rr")
+                schedulerMsg = "Round Robin, TQ = " + std::to_string(this->config->getQuantumCycles()) + " ticks";
+            else if (schedulerMsg == "fcfs")
+                schedulerMsg = "First-Come-First-Serve";
+
+            msgStream << "Scheduler initialized (" << schedulerMsg << ")...\n";
 
             // Initialize report handler
             this->reportHandler = std::make_shared<ReportHandler>(this->config);
+            msgStream << "Report handler initialized...\n";
 
             // Initialize screen handler
             this->screenHandler = std::make_shared<ScreenHandler>(
@@ -118,17 +128,21 @@ public:
 
             // Link report handler with screen handler
             this->reportHandler->setScreenHandler(this->screenHandler.get());
+            msgStream << "Screen handler initialized...\n";
 
             // spawn CPUs based on config
             for (int i = 0; i < this->config->getNumCpus(); ++i)
                 cpus.emplace_back(i, this->config->getQuantumCycles());
+            msgStream << "Spawned " << this->config->getNumCpus() << " CPUs...\n";
 
-            this->cli.displayMessage("System initialized with configuration from config.txt");
+            msgStream << "\n       << GreggyOS initialization complete >>";
         }
         catch (const std::exception &e)
         {
-            this->cli.displayMessage("Error initializing system: " + std::string(e.what()));
+            msgStream << "Error initializing system: " + std::string(e.what());
         }
+
+        return msgStream.str();
     }
 
     void schedulerLoop(std::atomic<bool> &isRunning, std::atomic<bool> &isInitialized)
@@ -170,7 +184,7 @@ public:
         int batchFreq = config->getBatchProcessFreq();
 
         // Check if it's time to generate a new process
-        if (currentTick - lastBatchTick >= batchFreq && scheduler->getNumActiveProcesses() < 10)
+        if (currentTick - lastBatchTick >= batchFreq && scheduler->getNumActiveProcesses() < config->getNumCpus() * 2)
         {
             auto newProcess = processGenerator->generateProcess(*config, memory);
             scheduler->addProcess(newProcess);
@@ -272,7 +286,7 @@ public:
 
         ss << "CPU-Util:     " << static_cast<uint64_t>(cpuUtil) << "%\n";
         ss << "Memory Usage: " << std::fixed << std::setprecision(2)
-        << usedMem << "B / " << totalMem << "B\n";
+           << usedMem << "B / " << totalMem << "B\n";
         ss << "Memory Util:  " << memUtil << "%\n\n";
 
         ss << "============================================================\n";
@@ -294,9 +308,9 @@ public:
                 if (p == nullptr)
                     continue;
 
-                ss << p->getName() << "   " << std::fixed << std::setprecision(2) 
-                << memory->getMemUsedByProcess(p->getPageNumbers(), p->getMemoryUsage()) << "B / "
-                << p->getMemoryUsage() << "B\n";
+                ss << p->getName() << "   " << std::fixed << std::setprecision(2)
+                   << memory->getMemUsedByProcess(p->getPageNumbers(), p->getMemoryUsage()) << "B / "
+                   << p->getMemoryUsage() << "B\n";
             }
         }
 
@@ -312,19 +326,20 @@ public:
         while (isRunning)
         {
             std::vector<std::string> userInput = splitString(this->cli.getUserInput("C:\\GreggyOS"), ' ');
-            commandHandler.parseCommand(userInput, isRunning, isInitialized, opcode, screenMode);
+            cli.displayMessage();
 
             if (userInput.empty())
                 continue;
 
-            cli.displayMessage();
+            commandHandler.parseCommand(userInput, isRunning, isInitialized, opcode, screenMode);
+
             switch (opcode)
             {
             case INITIALIZE:
                 if (!isInitialized)
                 {
-                    this->initializeConfig();
-                    this->cli.displayMessage("System initialized.");
+                    std::string message = this->initializeConfig();
+                    this->cli.displayMessage(message);
                     isInitialized = true;
                 }
                 else
@@ -352,7 +367,7 @@ public:
                     cli.displayMessage("System not initialized. Cannot generate report.");
                 break;
             case PROCESS_SMI:
-                if (scheduler && memory)  // optional safety check
+                if (scheduler && memory) // optional safety check
                     this->cli.displayMessage(this->processsmi());
                 else
                     this->cli.displayMessage("System not initialized. Cannot run PROCESS_SMI.");
@@ -471,7 +486,6 @@ public:
                 }
                 break; // Break from SCREEN case
             }
-
             case VMSTAT:
                 if (memory)
                     this->cli.displayMessage(this->vmstat());

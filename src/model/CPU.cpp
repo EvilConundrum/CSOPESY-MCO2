@@ -58,7 +58,9 @@ public:
 
             if (this->currProcess != nullptr && this->currProcess->isSleeping())
             {
-                if (waitingQueue != nullptr)
+                if (this->currProcess != nullptr && (this->currProcess->isFinished() || this->currProcess->isTerminated()))
+                    completeCurrentProcess(memory, this->currProcess->isTerminated());
+                else if (waitingQueue != nullptr)
                 {
                     waitingQueue->enqueueProcess(this->currProcess);
                     this->currProcess->setAssignedCore(-1);
@@ -84,11 +86,20 @@ public:
                     if (this->timeLeft <= 0)
                     {
                         this->timeLeft = this->timeQuantum;
-                        this->currProcess->setState(ProcessState::READY);
+
                         if (this->currProcess != nullptr)
                         {
                             this->currProcess->setAssignedCore(-1);
                         }
+
+                        // check if process is already done
+                        if (this->currProcess->isFinished() || this->currProcess->isTerminated())
+                        {
+                            completeCurrentProcess(memory, this->currProcess->isTerminated());
+                            return nullptr;
+                        }
+
+                        this->currProcess->setState(ProcessState::READY);
 
                         auto processToRequeue = this->currProcess;
                         this->currProcess = nullptr;
@@ -100,18 +111,18 @@ public:
                     this->currProcess->setState(ProcessState::READY);
                 }
             }
+        }
 
-            // Check if process is finished
-            if (this->currProcess != nullptr && this->currProcess->isFinished())
-            {
-                completeCurrentProcess(memory);
-            }
+        // Check if process is finished
+        if (this->currProcess != nullptr && this->currProcess->isFinished())
+        {
+            completeCurrentProcess(memory);
+        }
 
-            // check if process was terminated due to memory violation
-            if (this->currProcess != nullptr && this->currProcess->getState() == ProcessState::TERMINATED)
-            {
-                completeCurrentProcess(memory, true);
-            }
+        // check if process was terminated due to memory violation
+        if (this->currProcess != nullptr && this->currProcess->isTerminated())
+        {
+            completeCurrentProcess(memory, true);
         }
 
         return nullptr;
