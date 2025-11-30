@@ -15,8 +15,8 @@ class ScheduleHandler
 private:
     std::shared_ptr<ReadyQueue> readyQueue;
     std::string schedulerType;
-    std::atomic<uint64_t> cpuTicks;
-    std::atomic<uint64_t> activeTicks;
+    std::atomic<uint64_t> cpuTicks{0};
+    std::atomic<uint64_t> activeTicks{0};
     std::shared_ptr<WaitingQueue> waitingQueue;
     std::shared_ptr<Memory> memory;
 
@@ -117,12 +117,43 @@ public:
 
         if (isActive) // track active ticks
             activeTicks++;
+    }
 
-        // clamp the active ticks to not exceed cpu ticks
-        // in the rare occasion that C++ decides to make activeTicks > cpuTicks
-        if (activeTicks.load() > cpuTicks.load())
-            activeTicks = cpuTicks.load();
+    std::vector<std::shared_ptr<Process>> getRunningProcesses(const std::vector<CPU>& cpus)
+    {
+        std::vector<std::shared_ptr<Process>> running;
 
+        for (const auto& cpu : cpus)
+        {
+            if (!cpu.isIdle()) {
+                running.push_back(cpu.getCurrentProcess());
+            }
+        }
+
+        return running;
+    }
+
+    std::vector<std::shared_ptr<Process>> getAllScheduledProcesses(const std::vector<CPU>& cpus)
+    {
+        std::vector<std::shared_ptr<Process>> allProcesses;
+
+        // Get processes from CPUs
+        for (const auto& cpu : cpus)
+        {
+            if (!cpu.isIdle()) {
+                allProcesses.push_back(cpu.getCurrentProcess());
+            }
+        }
+
+        // Get processes from ready queue
+        auto readyProcesses = readyQueue->getAllProcesses();
+        allProcesses.insert(allProcesses.end(), readyProcesses.begin(), readyProcesses.end());
+
+        // Get processes from waiting queue
+        auto waitingProcesses = waitingQueue->getAllProcesses();
+        allProcesses.insert(allProcesses.end(), waitingProcesses.begin(), waitingProcesses.end());
+
+        return allProcesses;
     }
 
     /**

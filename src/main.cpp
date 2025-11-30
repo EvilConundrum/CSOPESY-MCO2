@@ -245,17 +245,65 @@ public:
 
     std::string processsmi()
     {
-        std::stringstream msgStream;
+        std::stringstream ss;
 
-        msgStream
-            << "------------------------------------------------------------\n"
-            << "                   GreggyOS Process SMI Report               \n"
-            << "------------------------------------------------------------\n";
+        // Header
+        ss << "------------------------------------------------------------\n";
+        ss << "                   PROCESS-SMI v01.00                        \n";
+        ss << "------------------------------------------------------------\n";
 
-        // TODO: put process SMI details here
+        // ---------- CPU UTIL ----------
+        uint64_t totalTicks = scheduler->getCpuTicks();
+        uint64_t activeTicks = scheduler->getActiveTicks();
+        uint64_t cpuUtil = 0;
+        if (activeTicks > 0)
+            cpuUtil = static_cast<uint64_t>((activeTicks * 100) / totalTicks);
+        else
+            cpuUtil = 0;
 
-        return msgStream.str();
+        // ---------- MEMORY UTIL ----------
+        uint64_t usedMem = memory->getUsedMemoryBytes();
+        uint64_t totalMem = memory->getTotalMemoryBytes();
+        int memUtil = static_cast<int>((usedMem * 100) / totalMem);
+
+        // Convert to MiB for display
+        // double usedMiB = usedMem / (1024.0 * 1024.0);
+        // double totalMiB = totalMem / (1024.0 * 1024.0);
+
+        ss << "CPU-Util:     " << static_cast<uint64_t>(cpuUtil) << "%\n";
+        ss << "Memory Usage: " << std::fixed << std::setprecision(2)
+        << usedMem << "B / " << totalMem << "B\n";
+        ss << "Memory Util:  " << memUtil << "%\n\n";
+
+        ss << "============================================================\n";
+        ss << "Running processes and memory usage:\n";
+        ss << "------------------------------------------------------------\n";
+
+        // ---------- PROCESS LIST ----------
+        auto processes = scheduler->getAllScheduledProcesses(cpus);
+
+        if (processes.empty())
+        {
+            ss << "(no running processes)\n";
         }
+        else
+        {
+            for (auto &p : processes)
+            {
+                // double pmem = p->getMemoryUsage() / (1024.0 * 1024.0);
+                if (p == nullptr)
+                    continue;
+
+                ss << p->getName() << "   " << std::fixed << std::setprecision(2) 
+                << memory->getMemUsedByProcess(p->getPageNumbers(), p->getMemoryUsage()) << "B / "
+                << p->getMemoryUsage() << "B\n";
+            }
+        }
+
+        ss << "------------------------------------------------------------\n";
+
+        return ss.str();
+    }
 
     void commandThread(std::atomic<bool> &isRunning, std::atomic<bool> &isInitialized)
     {
@@ -303,7 +351,12 @@ public:
                 else
                     cli.displayMessage("System not initialized. Cannot generate report.");
                 break;
-
+            case PROCESS_SMI:
+                if (scheduler && memory)  // optional safety check
+                    this->cli.displayMessage(this->processsmi());
+                else
+                    this->cli.displayMessage("System not initialized. Cannot run PROCESS_SMI.");
+                break;
             case SCREEN:
             {
                 std::lock_guard<std::mutex> lock(screenMutex);

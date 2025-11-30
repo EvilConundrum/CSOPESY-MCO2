@@ -228,6 +228,22 @@ public:
     }
     uint64_t getUsedMemoryBytes() const { return getTotalMemoryBytes() - getFreeMemoryBytes(); }
 
+    uint64_t getMemUsedByProcess(const std::vector<int> &pageNumbers, int memoryAllocated)
+    {
+        uint64_t usedBytes = 0;
+        for (int pageNumber : pageNumbers)
+        {
+            if (this->isPageInMemory(pageNumber))
+                usedBytes += pageSize;
+        }
+
+        // if all pages are in memory, cap usedBytes to memoryAllocated as the last page may not be fully used
+        if (usedBytes > memoryAllocated)
+            usedBytes = memoryAllocated;
+
+        return usedBytes;
+    }
+
 private:
     int getNumFrames(const Config &config)
     {
@@ -251,7 +267,7 @@ private:
         return index;
     }
 
-    int isPageInMemory(int pageNumber) { return getFrameByPageNumber(pageNumber) != -1; }
+    bool isPageInMemory(int pageNumber) { return getFrameByPageNumber(pageNumber) != -1; }
 
     /**
      * Returns the first free frame index found

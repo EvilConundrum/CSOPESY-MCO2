@@ -24,6 +24,7 @@ class ScreenHandler
 private:
     std::map<std::string, std::shared_ptr<Process>> processes;
     std::vector<std::shared_ptr<Process>> finishedProcesses;
+    std::vector<std::shared_ptr<Process>> terminatedProcesses;
     std::unordered_set<const Process *> archivedProcessPointers;
     std::mutex processesMutex;
     Config *config;
@@ -31,7 +32,9 @@ private:
     ScheduleHandler *scheduleHandler;
     ReportHandler *reportHandler;
 
-    static constexpr size_t MAX_FINISHED_HISTORY = 50;
+    static constexpr size_t MAX_FINISHED_HISTORY = 10;
+    uint64_t numFinishedProcesses = 0;
+    uint64_t numTerminatedProcesses = 0;
 
     struct ProcessDisplayInfo
     {
@@ -52,6 +55,7 @@ private:
         int coresAvailable = 0;
         std::vector<ProcessDisplayInfo> activeProcesses;
         std::vector<ProcessDisplayInfo> finishedProcessHistory;
+        std::vector<ProcessDisplayInfo> terminatedProcessHistory;
     };
 
 public:
@@ -413,16 +417,29 @@ private:
 
     void cleanupFinishedProcessesLocked()
     {
-        std::vector<std::string> toArchive;
+        std::vector<std::string> toArchiveFinished;
+        std::vector<std::string> toArchiveTerminated;
         for (const auto &entry : processes)
         {
             if (entry.second && entry.second->isFinished())
             {
-                toArchive.push_back(entry.first);
+                toArchiveFinished.push_back(entry.first);
+            }
+            else if (entry.second && entry.second->isTerminated())
+            {
+                toArchiveTerminated.push_back(entry.first);
             }
         }
 
-        for (const auto &name : toArchive)
+        for (const auto &name : toArchiveFinished)
+        {
+            auto it = processes.find(name);
+            if (it != processes.end())
+            {
+                archiveProcessLocked(name, it->second);
+            }
+        }
+        for (const auto &name : toArchiveTerminated)
         {
             auto it = processes.find(name);
             if (it != processes.end())
@@ -434,29 +451,39 @@ private:
 
     void archiveProcessLocked(const std::string &processName, const std::shared_ptr<Process> &process)
     {
-        if (!process || !process->isFinished())
+        if (process && (process->isFinished() || process->isTerminated()))
         {
-            return;
-        }
-
-        bool inserted = archivedProcessPointers.insert(process.get()).second;
-        if (inserted)
-        {
-            finishedProcesses.push_back(process);
-            if (finishedProcesses.size() > MAX_FINISHED_HISTORY)
+            bool inserted = archivedProcessPointers.insert(process.get()).second;
+            if (inserted)
             {
-                auto dropped = finishedProcesses.front();
-                archivedProcessPointers.erase(dropped.get());
-                finishedProcesses.erase(finishedProcesses.begin());
+                if (process->isTerminated())
+                {
+                    terminatedProcesses.push_back(process);
+                    numTerminatedProcesses++;
+                    if (reportHandler)
+                    {
+                        reportHandler->recordProcessTermination(process);
+                    }
+                }
+                else if (process->isFinished())
+                {
+                    finishedProcesses.push_back(process);
+                    if (finishedProcesses.size() > MAX_FINISHED_HISTORY)
+                    {
+                        auto dropped = finishedProcesses.front();
+                        archivedProcessPointers.erase(dropped.get());
+                        finishedProcesses.erase(finishedProcesses.begin());
+
+                        if (reportHandler)
+                        {
+                            reportHandler->recordProcessCompletion(process);
+                        }
+                    }
+                }
             }
 
-            if (reportHandler)
-            {
-                reportHandler->recordProcessCompletion(process);
-            }
+            processes.erase(processName);
         }
-
-        processes.erase(processName);
     }
 
     void archiveProcessIfFinished(const std::string &processName, const std::shared_ptr<Process> &process)
@@ -484,7 +511,7 @@ private:
         info.totalInstructions = process->getTotalInstructions();
         info.currentInstruction = process->getCurrentInstructionStr();
         info.timestamp = process->hasStarted() ? process->getStartTimeStr() : process->getCreationTimeStr();
-        info.finishedTimestamp = process->isFinished() ? process->getEndTimeStr() : "";
+        info.finishedTimestamp = (process->isFinished() || process->isTerminated()) ? process->getEndTimeStr() : "";
         info.assignedCore = process->getAssignedCore();
         return info;
     }
@@ -508,6 +535,14 @@ private:
             if (proc)
             {
                 summary.finishedProcessHistory.push_back(buildDisplayInfo(proc));
+            }
+        }
+
+        for (const auto &proc : terminatedProcesses)
+        {
+            if (proc)
+            {
+                summary.terminatedProcessHistory.push_back(buildDisplayInfo(proc));
             }
         }
 
@@ -604,6 +639,21 @@ private:
             }
         }
 
+        out << "\nTerminated processes:\n";
+        if (summary.terminatedProcessHistory.empty())
+        {
+            out << "  No terminated processes.\n";
+        }
+        else
+        {
+            for (const auto &info : summary.terminatedProcessHistory)
+            {
+                out << "  " << info.pid
+                    << " | Terminated: " << (info.finishedTimestamp.empty() ? "N/A" : info.finishedTimestamp)
+                    << " | Last line " << info.currentLine << "/" << info.totalInstructions << "\n";
+            }
+        }
+
         out << "----------------------------------------------\n";
         return out.str();
     }
@@ -620,6 +670,8 @@ private:
             return "Waiting";
         case ProcessState::FINISHED:
             return "Finished";
+        case ProcessState::TERMINATED:
+            return "Terminated";
         default:
             return "Unknown";
         }
@@ -628,13 +680,31 @@ private:
 public:
     /**
      * Gets a process by name
+     * We can lookup both active and terminated processes
+     * active to see the current instruction, terminated to see the reason for termination
      */
     std::shared_ptr<Process> getProcess(const std::string &processName)
     {
         std::lock_guard<std::mutex> lock(processesMutex);
         cleanupFinishedProcessesLocked();
         auto it = processes.find(processName);
-        return (it != processes.end()) ? it->second : nullptr;
+
+        bool isFound = (it != processes.end());
+
+        if (isFound)
+        {
+            return it->second;
+        }
+        
+        // search terminated processes
+        for (const auto &proc : terminatedProcesses)
+        {
+            if (proc && proc->getPID() == processName)
+            {
+                return proc;
+            }
+        }
+        return nullptr;
     }
 
     /**
