@@ -6,15 +6,20 @@
 #include <ctime>
 #include <thread>
 #include <atomic>
-#include "model\Config.cpp"
-#include "model\CPU.cpp"
-#include "handlers\ScheduleHandler.cpp"
-#include "handlers\GeneratorHandler.cpp"
-#include "handlers\ScreenHandler.cpp"
-#include "handlers\CommandHandler.cpp"
-#include "handlers\ReportHandler.cpp"
-#include "view\CLI.cpp"
-#include "view\misc.cpp"
+
+#ifndef DEBUG
+#define DEBUG false
+#endif
+
+#include "model/Config.cpp"
+#include "model/CPU.cpp"
+#include "handlers/ScheduleHandler.cpp"
+#include "handlers/GeneratorHandler.cpp"
+#include "handlers/ScreenHandler.cpp"
+#include "handlers/CommandHandler.cpp"
+#include "handlers/ReportHandler.cpp"
+#include "view/CLI.cpp"
+#include "view/misc.cpp"
 
 /**  TODO: TLDR there will be 2 threads:
  *   - Main thread: handles CLI input and command parsing
@@ -31,6 +36,7 @@ class GreggyOS
     std::thread cliThread;
     CommandLineInterface cli;
     Config *config;
+    std::shared_ptr<Memory> memory;
     std::shared_ptr<ScheduleHandler> scheduler;
     std::shared_ptr<GeneratorHandler> processGenerator;
     std::shared_ptr<ReportHandler> reportHandler;
@@ -50,67 +56,97 @@ public:
         this->isSchedulerRunning = false;
         this->lastBatchTick = 0;
 
-        this->config = new Config(this->configFilePath);
+        this->config = nullptr;
+        this->reportHandler = std::make_shared<ReportHandler>(this->config);
         this->processGenerator = std::make_shared<GeneratorHandler>();
 
         // spawn threads
         this->schedulerThread = std::thread(&GreggyOS::schedulerLoop, this, std::ref(this->isRunning), std::ref(this->isInitialized));
         this->cliThread = std::thread(&GreggyOS::commandThread, this, std::ref(this->isRunning), std::ref(this->isInitialized));
-        this->reportHandler = std::make_shared<ReportHandler>(this->config);
-
-        this->schedulerThread.join();
-        this->cliThread.join();
     }
 
-    void initializeConfig()
+    ~GreggyOS()
     {
+        if (schedulerThread.joinable())
+            schedulerThread.join();
+
+        this->cli.displayMessage("Goodbye!");
+        if (cliThread.joinable())
+            cliThread.join();
+
+        delete config;
+    }
+
+    std::string initializeConfig()
+    {
+        std::stringstream msgStream;
+        std::string configFileName = "config.txt";
+
+        msgStream << "Initializing config from \"" << configFileName << "\"...\n\n";
         try
         {
             // Check if config file exists first
-            std::ifstream configCheck("config.txt");
+            std::ifstream configCheck(configFileName);
             if (!configCheck.good())
             {
-                this->cli.displayMessage("Error: config.txt not found. Please ensure the configuration file exists.");
-                return;
+                throw std::runtime_error("config.txt not found. Please ensure the configuration file exists.");
             }
             configCheck.close();
 
-            Config lConfig("config.txt");
-            *this->config = lConfig;
+            Config lConfig(configFileName);
+            this->config = std::make_unique<Config>(lConfig).release();
 
-            this->cli.displayMessage("");
-            this->cli.displayMessage("Configuration loaded from config.txt");
+            msgStream << "Loaded " << configFileName << "...\n";
+
+            // Initialize memory inside scheduler
+            this->memory = std::make_shared<Memory>(this->config, "csopesy-backing-store.txt");
+
+            msgStream << "Created " << config->getMaxOverallMem() << " bytes of memory (" 
+                      << config->getMaxOverallMem() / this->memory->getPageSize() << " frames of "
+                      << this->memory->getPageSize() << " bytes each)...\n";
 
             this->scheduler = std::make_shared<ScheduleHandler>(
+                memory,
                 this->config->getSchedulerAlgorithm(),
-                this->config->getQuantumCycles());
+                this->config->getQuantumCycles(),
+                this->config);
 
-            this->cli.displayMessage("Scheduler initialized with algorithm: " + this->config->getSchedulerAlgorithm() + " and quantum cycles: " + std::to_string(this->config->getQuantumCycles()));
+            std::string schedulerMsg = this->config->getSchedulerAlgorithm();
+            if (schedulerMsg == "rr")
+                schedulerMsg = "Round Robin, TQ = " + std::to_string(this->config->getQuantumCycles()) + " ticks";
+            else if (schedulerMsg == "fcfs")
+                schedulerMsg = "First-Come-First-Serve";
+
+            msgStream << "Scheduler initialized (" << schedulerMsg << ")...\n";
 
             // Initialize report handler
             this->reportHandler = std::make_shared<ReportHandler>(this->config);
+            msgStream << "Report handler initialized...\n";
 
             // Initialize screen handler
             this->screenHandler = std::make_shared<ScreenHandler>(
                 this->config,
                 this->processGenerator.get(),
                 this->scheduler.get(),
-                this->reportHandler.get()
-            );
+                this->reportHandler.get());
 
             // Link report handler with screen handler
             this->reportHandler->setScreenHandler(this->screenHandler.get());
+            msgStream << "Screen handler initialized...\n";
 
             // spawn CPUs based on config
             for (int i = 0; i < this->config->getNumCpus(); ++i)
                 cpus.emplace_back(i, this->config->getQuantumCycles());
+            msgStream << "Spawned " << this->config->getNumCpus() << " CPUs...\n";
 
-            this->cli.displayMessage("System initialized with configuration from config.txt");
+            msgStream << "\n       << GreggyOS initialization complete >>";
         }
         catch (const std::exception &e)
         {
-            this->cli.displayMessage("Error initializing system: " + std::string(e.what()));
+            msgStream << "Error initializing system: " + std::string(e.what());
         }
+
+        return msgStream.str();
     }
 
     void schedulerLoop(std::atomic<bool> &isRunning, std::atomic<bool> &isInitialized)
@@ -152,19 +188,13 @@ public:
         int batchFreq = config->getBatchProcessFreq();
 
         // Check if it's time to generate a new process
-        if (currentTick - lastBatchTick >= batchFreq)
+        if (currentTick - lastBatchTick >= batchFreq && scheduler->getNumActiveProcesses() < config->getNumCpus() * 2)
         {
-            auto newProcess = processGenerator->generateProcess(*config);
+            auto newProcess = processGenerator->generateProcess(*config, memory);
             scheduler->addProcess(newProcess);
             if (screenHandler)
-            {
                 screenHandler->registerProcess(newProcess);
-            }
             lastBatchTick = currentTick;
-
-            // Optional: Log process generation (disabled to avoid console spam)
-            // std::cout << "[Scheduler] Generated process: " << newProcess->getPID()
-            //           << " at tick " << currentTick << std::endl;
         }
     }
 
@@ -208,26 +238,112 @@ public:
         reportHandler->generateStatusReport(true);
     }
 
+    /**
+     * Provides a summary of memory usage and CPU ticks
+     */
+    std::string vmstat()
+    {
+        std::stringstream msgStream;
+
+        msgStream
+            << "------------------------------------------------------------\n"
+            << "                   GreggyOS Memory Report                   \n"
+            << "------------------------------------------------------------\n"
+            << "Total Memory:     " << memory->getTotalMemoryBytes() << " bytes\n"
+            << "Free Memory:      " << memory->getFreeMemoryBytes() << " bytes\n"
+            << "Used Memory:      " << memory->getUsedMemoryBytes() << " bytes\n"
+            << "Active CPU ticks: " << static_cast<uint64_t>(scheduler->getActiveTicks()) << "\n"
+            << "Total CPU ticks:  " << static_cast<uint64_t>(scheduler->getCpuTicks()) << "\n"
+            << "Num Page-ins:     " << static_cast<uint64_t>(memory->getNumPagedIn()) << "\n"
+            << "Num Page-outs:    " << static_cast<uint64_t>(memory->getNumPagedOut()) << "\n"
+            << "------------------------------------------------------------\n";
+
+        return msgStream.str();
+    }
+
+    std::string processsmi()
+    {
+        std::stringstream ss;
+
+        // Header
+        ss << "------------------------------------------------------------\n";
+        ss << "                   PROCESS-SMI v01.00                        \n";
+        ss << "------------------------------------------------------------\n";
+
+        // ---------- CPU UTIL ----------
+        uint64_t totalTicks = scheduler->getCpuTicks();
+        uint64_t activeTicks = scheduler->getActiveTicks();
+        uint64_t cpuUtil = 0;
+        if (activeTicks > 0)
+            cpuUtil = static_cast<uint64_t>((activeTicks * 100) / totalTicks);
+        else
+            cpuUtil = 0;
+
+        // ---------- MEMORY UTIL ----------
+        uint64_t usedMem = memory->getUsedMemoryBytes();
+        uint64_t totalMem = memory->getTotalMemoryBytes();
+        int memUtil = static_cast<int>((usedMem * 100) / totalMem);
+
+        // Convert to MiB for display
+        // double usedMiB = usedMem / (1024.0 * 1024.0);
+        // double totalMiB = totalMem / (1024.0 * 1024.0);
+
+        ss << "CPU-Util:     " << static_cast<uint64_t>(cpuUtil) << "%\n";
+        ss << "Memory Usage: " << std::fixed << std::setprecision(2)
+           << usedMem << "B / " << totalMem << "B\n";
+        ss << "Memory Util:  " << memUtil << "%\n\n";
+
+        ss << "============================================================\n";
+        ss << "Running processes and memory usage:\n";
+        ss << "------------------------------------------------------------\n";
+
+        // ---------- PROCESS LIST ----------
+        auto processes = scheduler->getAllScheduledProcesses(cpus);
+
+        if (processes.empty())
+        {
+            ss << "(no running processes)\n";
+        }
+        else
+        {
+            for (auto &p : processes)
+            {
+                // double pmem = p->getMemoryUsage() / (1024.0 * 1024.0);
+                if (p == nullptr)
+                    continue;
+
+                ss << p->getName() << "   " << std::fixed << std::setprecision(2)
+                   << memory->getMemUsedByProcess(p->getPageNumbers(), p->getMemoryUsage()) << "B / "
+                   << p->getMemoryUsage() << "B\n";
+            }
+        }
+
+        ss << "------------------------------------------------------------\n";
+
+        return ss.str();
+    }
+
     void commandThread(std::atomic<bool> &isRunning, std::atomic<bool> &isInitialized)
     {
         std::atomic<Commands> opcode(Commands::UNKNOWN);
         std::atomic<int> screenMode(-1);
         while (isRunning)
         {
-            this->cli.displayMessage("");
             std::vector<std::string> userInput = splitString(this->cli.getUserInput("C:\\GreggyOS"), ' ');
-            commandHandler.parseCommand(userInput, isRunning, isInitialized, opcode, screenMode);
-            
+            cli.displayMessage();
+
             if (userInput.empty())
                 continue;
+
+            commandHandler.parseCommand(userInput, isRunning, isInitialized, opcode, screenMode);
 
             switch (opcode)
             {
             case INITIALIZE:
                 if (!isInitialized)
                 {
-                    this->initializeConfig();
-                    this->cli.displayMessage("System initialized.");
+                    std::string message = this->initializeConfig();
+                    this->cli.displayMessage(message);
                     isInitialized = true;
                 }
                 else
@@ -239,34 +355,34 @@ public:
                 isRunning = false;
                 this->cli.displayMessage("Exiting GreggyOS...");
                 break;
-            
+
             case SCHEDULER_START:
                 this->startScheduler();
                 break;
-            
+
             case SCHEDULER_STOP:
                 this->stopScheduler();
                 break;
-            
+
             case REPORT_UTIL:
-                if (screenHandler != nullptr)
-                {
-                    if (!screenHandler->writeScreenReport()) {
-                        cli.displayMessage("Failed to generate utilization report.");
-                    }
-                }
+                if (screenHandler != nullptr && !screenHandler->writeScreenReport())
+                    cli.displayMessage("Failed to generate utilization report.");
                 else
-                {
                     cli.displayMessage("System not initialized. Cannot generate report.");
-                }
                 break;
-            
+            case PROCESS_SMI:
+                if (scheduler && memory) // optional safety check
+                    this->cli.displayMessage(this->processsmi());
+                else
+                    this->cli.displayMessage("System not initialized. Cannot run PROCESS_SMI.");
+                break;
             case SCREEN:
             {
                 std::lock_guard<std::mutex> lock(screenMutex);
                 std::string screenName = "";
 
-                if (!screenHandler) {
+                if (!screenHandler)
+                {
                     cli.displayMessage("System not initialized. Cannot access screens.");
                     break;
                 }
@@ -293,13 +409,13 @@ public:
                         break;
                     }
 
-                    if (screenHandler->createScreen(screenName, memoryBytes))
+                    if (screenHandler->createScreen(screenName, memoryBytes, this->memory.get()))
                     {
                         this->cli.displayMessage("Process created. Use 'screen -r " + screenName + "' to attach.");
                     }
                     break;
                 }
-                    
+
                 case 2: // view specific screen (interactive mode)
                     if (userInput.size() < 3)
                     {
@@ -312,10 +428,10 @@ public:
                     break;
 
                 case 3: // list screens
-                    {
-                        screenHandler->displayScreenList();
-                    }
-                    break;
+                {
+                    screenHandler->displayScreenList();
+                }
+                break;
 
                 case 4: // custom instructions
                     if (userInput.size() < 5)
@@ -362,7 +478,7 @@ public:
                         break;
                     }
 
-                    if (screenHandler->createCustomProcess(screenName, memorySize, rawInstructions))
+                    if (screenHandler->createCustomProcess(screenName, memorySize, this->memory.get(), rawInstructions))
                     {
                         this->cli.displayMessage("Custom process created. Use 'screen -r " + screenName + "' to attach.");
                     }
@@ -374,10 +490,35 @@ public:
                 }
                 break; // Break from SCREEN case
             }
-            
+            case VMSTAT:
+                if (memory)
+                    this->cli.displayMessage(this->vmstat());
+                else
+                    cli.displayMessage("Memory not initialized.");
+                break;
+#ifdef DEBUG
+            case MEM_SNAPSHOT:
+                if (memory)
+                    cli.displayMessage(memory->getMemorySnapshot());
+                else
+                    cli.displayMessage("Memory not initialized.");
+                break;
+
+            case FORCE_FLUSH:
+                if (memory)
+                {
+                    memory->flushAllPagesToBackingStore();
+                    cli.displayMessage("All pages flushed to backing store.");
+                }
+                else
+                    cli.displayMessage("Memory not initialized.");
+                break;
+#endif
+
             default:
                 break;
             }
+            cli.displayMessage();
         }
     }
 };

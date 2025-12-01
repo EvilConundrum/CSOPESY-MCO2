@@ -4,6 +4,7 @@
 #include "../Config.cpp"
 #include "./BackingStore.cpp"
 #include "./Frame.cpp"
+#include "./Address.cpp"
 
 /**
  * Memory management unit, handles page reads/writes and page faults
@@ -41,29 +42,47 @@ public:
             frame.releaseMemory();
     }
 
+    void init()
+    {
+        this->numFrames = this->getNumFrames(*config);
+        this->physicalMemory = std::vector<Frame>();
+
+        for (int i = 0; i < this->numFrames; i++)
+        {
+            Frame newFrame(i, config->getMemPerFrame());
+            this->physicalMemory.push_back(newFrame);
+        }
+    }
+
+    uint16_t getPageSize() { return this->pageSize; }
+
     /**
      * Write data to a frame at given offset
      * Returns true if write was successful, false if page fault occurred
      */
-    void write(int pageNumber, int offset, const uint16_t &data, uint64_t currentTick)
+    void write(LogicalAddress address, const uint16_t &data, uint64_t currentTick)
     {
         // check if page is in memory
+        int frameIndex = handlePageFault(address.pageNumber, currentTick);
 
-        int frameIndex = handlePageFault(pageNumber, currentTick);
         if (frameIndex >= 0)
         {
             Frame &frame = physicalMemory[frameIndex];
-            frame.writeData(offset, data, currentTick);
+            frame.writeData(address.offset, data, currentTick);
         }
     }
 
-    uint16_t read(int pageNumber, int offset, uint64_t currentTick)
+    /**
+     * Reads data from a frame at given offset
+     * Handles page faults if page is not in memory
+     */
+    uint16_t read(LogicalAddress address, uint64_t currentTick)
     {
-        int frameIndex = handlePageFault(pageNumber, currentTick);
+        int frameIndex = handlePageFault(address.pageNumber, currentTick);
         if (frameIndex >= 0)
         {
             Frame &frame = physicalMemory[frameIndex];
-            return frame.getData(offset, currentTick);
+            return frame.getData(address.offset, currentTick);
         }
 
         return 0; // should not reach here
@@ -77,14 +96,17 @@ public:
     bool releasePage(int pageNumber)
     {
         int frameIndex = getFrameByPageNumber(pageNumber);
+
+        backingStore.freePage(pageNumber);
+
         if (frameIndex >= 0)
         {
-            Frame &frame = physicalMemory[frameIndex];
-            if (frame.isDirty())
-                backingStore.writeRow(frame);
-            frame.releaseMemory();
+            // if (physicalMemory[frameIndex].isDirty())
+            //     backingStore.writeRow(physicalMemory[frameIndex]);
+            physicalMemory[frameIndex].releaseMemory();
             return true;
         }
+
         return false;
     }
 
@@ -101,20 +123,70 @@ public:
         return pageNumbers;
     }
 
-    /**
-     * Deallocates the page from the physical memory and backing store
-     * is called when a process terminates or completes
-     */
-    void freePage(int pageNumber)
+    std::string getMemoryState() const
     {
-        int index = getFrameByPageNumber(pageNumber);
+        std::string result;
+        for (const auto &frame : physicalMemory)
+        {
+            result += "Frame " + std::to_string(frame.getFrameNumber()) + ": ";
+            if (frame.isValid())
+            {
+                result += "Page " + std::to_string(frame.getPageNumber()) + ", Last Access Tick: " + std::to_string(frame.getLastAccessTick()) + "\n";
+            }
+            else
+            {
+                result += "Free\n";
+            }
+        }
+        return result;
+    }
 
-        // release if found in physical memory
-        if (index >= 0)
-            physicalMemory[index].releaseMemory();
+    std::string getMemorySnapshot() const
+    {
+        std::string result;
 
-        // free from backing store
-        this->backingStore.freePage(pageNumber);
+        int numFrameDigits = std::to_string(this->physicalMemory.size()).length();
+        // gets the number of digits in the highest page number
+        int numPageDigits;
+
+        for (const auto &frame : physicalMemory)
+        {
+            if (frame.isValid())
+            {
+                int pageNumDigits = std::to_string(frame.getPageNumber()).length();
+                if (pageNumDigits > numPageDigits)
+                    numPageDigits = pageNumDigits;
+            }
+        }
+
+        auto padLeft = [](const std::string &s, int totalLength, char paddingChar = ' ')
+        {
+            if (s.length() >= totalLength)
+                return s;
+            return std::string(totalLength - s.length(), paddingChar) + s;
+        };
+
+        numPageDigits = std::max(numPageDigits, 4); // minimum 4 digits for page numbers
+
+        int i = 0;
+        for (const auto &frame : physicalMemory)
+        {
+            result += "[" + padLeft(std::to_string(frame.getFrameNumber()), numFrameDigits) + "] ";
+            result += "Page: " + (padLeft(frame.isValid() ? std::to_string(frame.getPageNumber()) : "Free", numPageDigits)) + " Data: ";
+            result += frame.getFrameAsString() + "\n";
+        }
+        return result;
+    }
+
+    bool flushAllPagesToBackingStore()
+    {
+        for (auto &frame : physicalMemory)
+        {
+            if (frame.isValid() && frame.isDirty())
+                if (!backingStore.writeRow(frame))
+                    return false;
+        }
+        return true;
     }
 
     // extra functions for vmstat and debugging
@@ -127,19 +199,35 @@ public:
     uint64_t getNumHits() const { return num_hits; }
     uint64_t getNumFaults() const { return num_faults; }
 
-private:
-    void init()
-    {
-        this->numFrames = this->getNumFrames(*config);
-        this->physicalMemory = std::vector<Frame>();
-
-        for (int i = 0; i < this->numFrames; i++)
+    uint64_t getTotalMemoryBytes() const { return numFrames * pageSize; }
+    uint64_t getFreeMemoryBytes() const {
+        int freeFrames = 0;
+        for (const auto &frame : physicalMemory)
         {
-            Frame newFrame(i, config->getMemPerFrame());
-            this->physicalMemory.push_back(newFrame);
+            if (!frame.isValid())
+                freeFrames++;
         }
+        return freeFrames * pageSize;
+    }
+    uint64_t getUsedMemoryBytes() const { return getTotalMemoryBytes() - getFreeMemoryBytes(); }
+
+    uint64_t getMemUsedByProcess(const std::vector<int> &pageNumbers, int memoryAllocated)
+    {
+        uint64_t usedBytes = 0;
+        for (int pageNumber : pageNumbers)
+        {
+            if (this->isPageInMemory(pageNumber))
+                usedBytes += pageSize;
+        }
+
+        // if all pages are in memory, cap usedBytes to memoryAllocated as the last page may not be fully used
+        if (usedBytes > memoryAllocated)
+            usedBytes = memoryAllocated;
+
+        return usedBytes;
     }
 
+private:
     int getNumFrames(const Config &config)
     {
         return config.getMaxOverallMem() / config.getMemPerFrame();
@@ -162,7 +250,7 @@ private:
         return index;
     }
 
-    int isPageInMemory(int pageNumber) { return getFrameByPageNumber(pageNumber) != -1; }
+    bool isPageInMemory(int pageNumber) { return getFrameByPageNumber(pageNumber) != -1; }
 
     /**
      * Returns the first free frame index found

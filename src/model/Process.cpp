@@ -9,7 +9,14 @@
 #include <algorithm>
 #include "Instruction.cpp"
 
-enum class ProcessState { READY, RUNNING, WAITING, FINISHED };
+enum class ProcessState
+{
+    READY,
+    RUNNING,
+    WAITING,
+    FINISHED,
+    TERMINATED
+};
 
 class Process
 {
@@ -31,8 +38,11 @@ class Process
     // Memory usage info (for later expansion)
     int memoryRequired;
 
-    // Variable storage (persistent process memory)
+    // variable stuff
+    // this holds variable name and their corresponding memory location
     std::unordered_map<std::string, uint16_t> variables;
+    // basis of setting up pages allocated to this process
+    std::vector<int> allocatedPages;
 
     // Process logs (capture instruction outputs)
     std::vector<std::string> logs;
@@ -40,18 +50,29 @@ class Process
     int assignedCore;
 
 public:
-    Process(std::string pid, int totalInstructions = 0)
+    Process(std::string pid, int totalInstructions = 0, int memoryRequired = 0)
     {
         this->PID = pid;
         this->state = ProcessState::READY;
         this->currentInstructionLine = 0;
         this->totalInstructions = totalInstructions;
-        this->memoryRequired = 0;
+        this->memoryRequired = memoryRequired;
         this->creationTime = std::chrono::system_clock::now();
         this->instructions.reserve(totalInstructions);
         this->assignedCore = -1;
         this->sleepTimeRemaining = 0;
     }
+
+    // sets the pages assigned to this process
+    void addPageNumber(int pageNumber) { allocatedPages.push_back(pageNumber); }
+    void addPageNumbers(const std::vector<int> &pageNumbers)
+    {
+        for (int pageNumber : pageNumbers)
+            this->addPageNumber(pageNumber);
+    }
+
+    std::vector<int> getPageNumbers() { return allocatedPages; }
+    int getNumPages() const { return static_cast<int>(allocatedPages.size()); }
 
     /**
      * Adds an instruction to the process
@@ -62,86 +83,76 @@ public:
         totalInstructions = instructions.size();
     }
 
+    // Returns the process name (PID)
+    std::string getName() const { return PID; }
+
+    // Returns memory usage in bytes (or whatever unit you prefer)
+    int getMemoryUsage() const { return memoryRequired; }
+
     /**
      * Executes the next instruction in the process
      * Returns true if instruction was executed, false if finished
      */
-    bool executeNextInstruction()
+    bool executeNextInstruction(Memory *memory, uint64_t currentTick)
     {
-        if (currentInstructionLine >= instructions.size()) {
+        if (currentInstructionLine >= instructions.size())
+        {
             this->state = ProcessState::FINISHED;
             this->endTime = std::chrono::system_clock::now();
             return false;
         }
 
         // Execute instruction silently (no console output) with logging
-        auto logCallback = [this](const std::string& logEntry) {
+        auto logCallback = [this](const std::string &logEntry)
+        {
             this->addLog(logEntry);
         };
-        
+
         // Pass false for printToConsole to suppress console output
-        int sleepTime = instructions[currentInstructionLine].execute(variables, logCallback, false);
+        int sleepTime = instructions[currentInstructionLine].execute(variables, memory, currentTick, allocatedPages, memoryRequired, logCallback, false);
 
-        currentInstructionLine++;
-
-        if (sleepTime > 0) {
+        if (sleepTime > 0)
+        {
             beginSleep(sleepTime);
+            currentInstructionLine++;
             return true;
         }
+        else if (sleepTime == -1)
+        {
+            // Special case: terminate process immediately
+            this->state = ProcessState::TERMINATED;
+            this->endTime = std::chrono::system_clock::now();
 
+            // we wont add what the attempted address was as it
+            // should have been indicated in the previous line.
+            std::string terminateLog = "[TERMINATE] Process " + PID + " terminated due to memory access violation at " + this->getEndTimeStr() + ".";
+            this->addLog(terminateLog);
+
+            return true;
+        }
+        else
+        {
+            if (isFinished())
+            {
+                this->state = ProcessState::FINISHED;
+                this->endTime = std::chrono::system_clock::now();
+            }
+        }
+
+        currentInstructionLine++;
         return true;
     }
 
-    /**
-     * Gets the current instruction without advancing
-     */
-    Instruction getCurrentInstruction() const
-    {
-        if (currentInstructionLine < instructions.size()) {
-            return instructions[currentInstructionLine];
-        }
-        return Instruction();
-    }
+    Instruction getCurrentInstruction() const { return (currentInstructionLine < instructions.size()) ? instructions[currentInstructionLine] : Instruction(); }
+    bool hasInstructions() const { return currentInstructionLine < instructions.size(); }
+    int getTotalInstructions() const { return totalInstructions; }
+    int getCurrentLine() const { return currentInstructionLine; }
 
-    /**
-     * Checks if the process has remaining instructions
-     */
-    bool hasInstructions() const
-    {
-        return currentInstructionLine < instructions.size();
-    }
+    std::string getPID() const { return PID; }
+    ProcessState getState() const { return state; }
 
-    /**
-     * Gets the total number of instructions
-     */
-    int getTotalInstructions() const
-    {
-        return totalInstructions;
-    }
-
-    /**
-     * Gets the current instruction line number
-     */
-    int getCurrentLine() const
-    {
-        return currentInstructionLine;
-    }
-
-    /**
-     * Gets the PID of the process
-     */
-    std::string getPID() const
-    {
-        return PID;
-    }
-
-    /**
-     * Gets the current state of the process
-     */
-    ProcessState getState() const
-    {
-        return state;
-    }
+    // TODO: DON'T FORGET TO CALL THIS WHEN PROCESS FINISHES TO REALLOCATE PAGES
+    std::vector<int> getAllocatedPages() const { return allocatedPages; }
 
     /**
      * Sets the state of the process
@@ -151,11 +162,13 @@ public:
         this->state = newState;
 
         // Set start time when process begins running
-        if (newState == ProcessState::RUNNING && currentInstructionLine == 0) {
+        if (newState == ProcessState::RUNNING && currentInstructionLine == 0)
+        {
             this->startTime = std::chrono::system_clock::now();
         }
         // Set end time when process finishes
-        else if (newState == ProcessState::FINISHED) {
+        else if (newState == ProcessState::FINISHED)
+        {
             this->endTime = std::chrono::system_clock::now();
         }
     }
@@ -163,46 +176,19 @@ public:
     /**
      * Checks if the process is finished
      */
-    bool isFinished() const
-    {
-        return state == ProcessState::FINISHED || currentInstructionLine >= totalInstructions;
-    }
+    bool isFinished() const { return state == ProcessState::FINISHED || currentInstructionLine >= totalInstructions; }
+    bool isTerminated() const { return state == ProcessState::TERMINATED; }
 
     /**
      * Gets the creation time of the process
      */
-    std::chrono::system_clock::time_point getCreationTime() const
-    {
-        return creationTime;
-    }
+    std::chrono::system_clock::time_point getCreationTime() const { return creationTime; }
 
-    /**
-     * Gets formatted creation time as string
-     */
-    std::string getCreationTimeStr() const
-    {
-        return formatTimePoint(creationTime);
-    }
-
-    std::string getStartTimeStr() const
-    {
-        return formatTimePoint(startTime);
-    }
-
-    std::string getEndTimeStr() const
-    {
-        return formatTimePoint(endTime);
-    }
-
-    bool hasStarted() const
-    {
-        return startTime.time_since_epoch().count() != 0;
-    }
-
-    bool hasCompleted() const
-    {
-        return endTime.time_since_epoch().count() != 0;
-    }
+    std::string getCreationTimeStr() const { return formatTimePoint(creationTime); }
+    std::string getStartTimeStr() const { return formatTimePoint(startTime); }
+    std::string getEndTimeStr() const { return formatTimePoint(endTime); }
+    bool hasStarted() const { return startTime.time_since_epoch().count() != 0; }
+    bool hasCompleted() const { return endTime.time_since_epoch().count() != 0; }
 
     /**
      * Resets the process to initial state
@@ -216,43 +202,14 @@ public:
     }
 
     /**
-     * Sets memory requirement for the process
-     */
-    void setMemoryRequired(int memory)
-    {
-        this->memoryRequired = memory;
-    }
-
-    /**
      * Gets memory requirement for the process
      */
-    int getMemoryRequired() const
-    {
-        return memoryRequired;
-    }
-
-    // 🔹 Variable access helpers
-    const std::unordered_map<std::string, uint16_t>& getVariables() const
-    {
-        return variables;
-    }
-
-    uint16_t getVariable(const std::string& name) const
-    {
-        auto it = variables.find(name);
-        if (it != variables.end()) return it->second;
-        return 0;
-    }
-
-    void setVariable(const std::string& name, uint16_t value)
-    {
-        variables[name] = value;
-    }
+    int getMemoryRequired() const { return memoryRequired; }
 
     /**
      * Adds a log entry to the process
      */
-    void addLog(const std::string& logEntry)
+    void addLog(const std::string &logEntry)
     {
         std::lock_guard<std::mutex> lock(logMutex);
         logs.push_back(logEntry);
@@ -261,10 +218,7 @@ public:
     /**
      * Gets all process logs
      */
-    std::vector<std::string> getLogs() const
-    {
-        return logs;
-    }
+    std::vector<std::string> getLogs() const { return logs; }
 
     /**
      * Clears all process logs
@@ -280,57 +234,39 @@ public:
      */
     std::string getCurrentInstructionStr() const
     {
-        if (currentInstructionLine >= instructions.size()) {
+        if (currentInstructionLine >= instructions.size())
             return "No instruction (process finished)";
-        }
-        
-        const auto& instr = instructions[currentInstructionLine];
+
+        const auto &instr = instructions[currentInstructionLine];
         std::string result = instr.getCommand();
-        
+
         auto args = instr.getArgs();
-        for (const auto& arg : args) {
+        for (const auto &arg : args)
             result += " " + arg;
-        }
-        
+
         return result;
     }
 
-    void setAssignedCore(int coreId)
-    {
-        assignedCore = coreId;
-    }
-
-    int getAssignedCore() const
-    {
-        return assignedCore;
-    }
-
-    bool isSleeping() const
-    {
-        return sleepTimeRemaining > 0 && state == ProcessState::WAITING;
-    }
-
-    int getSleepTimeRemaining() const
-    {
-        return sleepTimeRemaining;
-    }
+    void setAssignedCore(int coreId) { assignedCore = coreId; }
+    int getAssignedCore() const { return assignedCore; }
+    bool isSleeping() const { return sleepTimeRemaining > 0 && state == ProcessState::WAITING; }
+    int getSleepTimeRemaining() const { return sleepTimeRemaining; }
 
     void beginSleep(int ticks)
     {
         sleepTimeRemaining = std::max(0, ticks);
-        if (sleepTimeRemaining > 0) {
+        if (sleepTimeRemaining > 0)
             setState(ProcessState::WAITING);
-        }
     }
 
     bool tickSleep(int ticks = 1)
     {
-        if (sleepTimeRemaining <= 0) {
+        if (sleepTimeRemaining <= 0)
             return true;
-        }
 
         sleepTimeRemaining -= std::max(1, ticks);
-        if (sleepTimeRemaining <= 0) {
+        if (sleepTimeRemaining <= 0)
+        {
             sleepTimeRemaining = 0;
             return true;
         }
@@ -340,25 +276,28 @@ public:
     void wakeFromSleep()
     {
         sleepTimeRemaining = 0;
-        if (isFinished()) {
-            setState(ProcessState::FINISHED);
-        } else {
-            setState(ProcessState::READY);
-        }
+        setState(isFinished() ? ProcessState::FINISHED : ProcessState::READY);
     }
 
 private:
-    std::string formatTimePoint(const std::chrono::system_clock::time_point& timePoint) const
+    std::string formatTimePoint(const std::chrono::system_clock::time_point &timePoint) const
     {
-        if (timePoint.time_since_epoch().count() == 0) {
+        if (timePoint.time_since_epoch().count() == 0)
+        {
             return "N/A";
         }
 
         std::time_t time = std::chrono::system_clock::to_time_t(timePoint);
         char buffer[26];
+#ifdef _WIN32
         ctime_s(buffer, sizeof(buffer), &time);
+#else
+        ctime_r(&time, buffer);
+#endif
+
         std::string timeStr(buffer);
-        if (!timeStr.empty() && timeStr.back() == '\n') {
+        if (!timeStr.empty() && timeStr.back() == '\n')
+        {
             timeStr.pop_back();
         }
         return timeStr;

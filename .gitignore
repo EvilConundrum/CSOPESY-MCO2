@@ -47,3 +47,13 @@
 *.pdf
 
 *.bat
+# helper scripts
+*.py
+
+
+# whitelist run scripts
+!run.bat
+!run.sh
+
+# removes any backing store files and variations in its name
+csopesy-backing-store.txt
