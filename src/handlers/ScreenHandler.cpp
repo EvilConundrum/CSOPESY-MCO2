@@ -654,6 +654,11 @@ private:
             }
         }
 
+        out << "\n----------------------------------------------\n";
+        out << std::fixed << std::setprecision(2)
+            << "CPU usage: " << summary.coresUsed << "/"
+            << summary.coresAvailable + summary.coresUsed << " ("
+            << summary.cpuUtilization << "% utilization)\n";
         out << "----------------------------------------------\n";
         return out.str();
     }
@@ -695,7 +700,7 @@ public:
         {
             return it->second;
         }
-        
+
         // search terminated processes
         for (const auto &proc : terminatedProcesses)
         {
