@@ -197,8 +197,16 @@ public:
             reportHandler->recordProcessStart(process);
         }
 
-        // this little string preconcatenation is to avoid multiple cout calls esp when im debugging methods in the other threads
-        std::string outString = "Process " + processName + " created with " + std::to_string(parsedInstructions.size()) + " custom instructions. \n Memory allocated: " + std::to_string(memorySize) + " bytes (" + std::to_string(process->getNumPages()) + " pages allocated).\n\n";
+        /*
+         * This little string preconcatenation is to avoid multiple cout calls 
+         * especially when im debugging methods in the other threads
+         */
+        std::string outString = 
+            "Process " + processName + 
+            " created with " + std::to_string(parsedInstructions.size()) + 
+            " custom instructions. \n Memory allocated: " + std::to_string(memorySize) + 
+            " bytes (" + std::to_string(process->getNumPages()) + 
+            " pages allocated).\n\n";
         std::cout << outString;
 
         return true;
