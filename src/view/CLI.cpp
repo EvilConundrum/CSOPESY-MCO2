@@ -2,6 +2,7 @@
 #include <iostream>
 #include <string>
 #include <vector>
+#include <cstdlib>
 
 class CommandLineInterface
 {
@@ -28,7 +29,11 @@ private:
     void displayWelcomeMessage()
     {
         // clear screen
+#ifdef _WIN32
+        system("cls");
+#else
         std::cout << "\033[2J\033[1;1H";
+#endif
 
         this->displayMessage(
             "   ____                             ___  ____  \n"
