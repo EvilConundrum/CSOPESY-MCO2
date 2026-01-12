@@ -365,9 +365,7 @@ public:
                 break;
 
             case REPORT_UTIL:
-                if (screenHandler != nullptr && !screenHandler->writeScreenReport())
-                    cli.displayMessage("Failed to generate utilization report.");
-                else
+                if (screenHandler == nullptr)
                     cli.displayMessage("System not initialized. Cannot generate report.");
                 break;
             case PROCESS_SMI:
