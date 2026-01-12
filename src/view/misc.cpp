@@ -1,4 +1,7 @@
 #pragma once
+#include <cstdint>
+#include <sstream>
+#include <iomanip>
 #include <vector>
 #include <string>
 
