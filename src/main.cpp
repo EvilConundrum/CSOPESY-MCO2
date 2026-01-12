@@ -351,6 +351,7 @@ public:
                     this->cli.displayMessage("System already initialized.");
                 }
                 break;
+
             case EXIT:
                 isRunning = false;
                 this->cli.displayMessage("Exiting GreggyOS...");
@@ -367,13 +368,17 @@ public:
             case REPORT_UTIL:
                 if (screenHandler == nullptr)
                     cli.displayMessage("System not initialized. Cannot generate report.");
+                else if (!screenHandler->writeScreenReport())
+                    cli.displayMessage("Failed to generate utilization report.");
                 break;
+
             case PROCESS_SMI:
                 if (scheduler && memory) // optional safety check
                     this->cli.displayMessage(this->processsmi());
                 else
                     this->cli.displayMessage("System not initialized. Cannot run PROCESS_SMI.");
                 break;
+
             case SCREEN:
             {
                 std::lock_guard<std::mutex> lock(screenMutex);
@@ -488,6 +493,7 @@ public:
                 }
                 break; // Break from SCREEN case
             }
+            
             case VMSTAT:
                 if (memory)
                     this->cli.displayMessage(this->vmstat());
