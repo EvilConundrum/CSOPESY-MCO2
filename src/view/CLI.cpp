@@ -30,7 +30,7 @@ private:
     {
         // clear screen
 #ifdef _WIN32
-        system("cls");
+        std::system("cls");
 #else
         std::cout << "\033[2J\033[1;1H";
 #endif
